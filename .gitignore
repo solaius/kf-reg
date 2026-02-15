@@ -63,3 +63,7 @@ CLAUDE.md
 
 **/go.work
 **/go.work.sum
+
+# Project and Product Docs
+prod-doc/
+catalog_of_catalogs/

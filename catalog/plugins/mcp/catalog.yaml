@@ -1,0 +1,35 @@
+apiVersion: catalog.kubeflow.org/v1alpha1
+kind: CatalogConfig
+metadata:
+  name: mcp
+spec:
+  package: github.com/kubeflow/model-registry/catalog/plugins/mcp
+  entity:
+    name: McpServer
+    properties:
+      - name: serverUrl
+        type: string
+        required: true
+        description: URL of the MCP server
+      - name: transportType
+        type: string
+        description: "Transport protocol: stdio, http, sse"
+      - name: toolCount
+        type: integer
+        description: Number of tools exposed
+      - name: resourceCount
+        type: integer
+        description: Number of resources exposed
+      - name: promptCount
+        type: integer
+        description: Number of prompts exposed
+  providers:
+    - type: yaml
+  api:
+    basePath: /api/mcp_catalog/v1alpha1
+    port: 8081
+
+# The following fields are already included from BaseResource and should NOT
+# be added to properties above:
+#   name, id, externalId, description, customProperties,
+#   createTimeSinceEpoch, lastUpdateTimeSinceEpoch

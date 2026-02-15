@@ -65,6 +65,35 @@ type SourceKeyProvider interface {
 	SourceKey() string
 }
 
+// PluginCapabilities describes what a plugin supports.
+type PluginCapabilities struct {
+	EntityKinds  []string `json:"entityKinds"`
+	ListEntities bool     `json:"listEntities"`
+	GetEntity    bool     `json:"getEntity"`
+	ListSources  bool     `json:"listSources"`
+	Artifacts    bool     `json:"artifacts"`
+}
+
+// CapabilitiesProvider is an optional interface that plugins can implement
+// to advertise their capabilities for generic UI/CLI discovery.
+type CapabilitiesProvider interface {
+	Capabilities() PluginCapabilities
+}
+
+// PluginStatus provides detailed status information about a plugin.
+type PluginStatus struct {
+	Enabled     bool   `json:"enabled"`
+	Initialized bool   `json:"initialized"`
+	Serving     bool   `json:"serving"`
+	LastError   string `json:"lastError,omitempty"`
+}
+
+// StatusProvider is an optional interface that plugins can implement
+// to provide detailed status beyond the boolean Healthy() check.
+type StatusProvider interface {
+	Status() PluginStatus
+}
+
 // Migration represents a database migration for a plugin.
 type Migration struct {
 	// Version is a unique identifier for this migration (e.g., "001", "20240101_initial").

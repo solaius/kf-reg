@@ -14,15 +14,22 @@ import (
 	"gorm.io/gorm"
 )
 
+// failedPlugin records a plugin that failed during initialization.
+type failedPlugin struct {
+	plugin CatalogPlugin
+	err    error
+}
+
 // Server manages the lifecycle of catalog plugins and provides a unified HTTP server.
 type Server struct {
-	router      chi.Router
-	db          *gorm.DB
-	config      *CatalogSourcesConfig
-	configPaths []string
-	logger      *slog.Logger
-	plugins     []CatalogPlugin
-	mu          sync.RWMutex
+	router        chi.Router
+	db            *gorm.DB
+	config        *CatalogSourcesConfig
+	configPaths   []string
+	logger        *slog.Logger
+	plugins       []CatalogPlugin
+	failedPlugins []failedPlugin
+	mu            sync.RWMutex
 }
 
 // NewServer creates a new plugin server.
@@ -32,11 +39,12 @@ func NewServer(cfg *CatalogSourcesConfig, configPaths []string, db *gorm.DB, log
 	}
 
 	return &Server{
-		db:          db,
-		config:      cfg,
-		configPaths: configPaths,
-		logger:      logger,
-		plugins:     make([]CatalogPlugin, 0),
+		db:            db,
+		config:        cfg,
+		configPaths:   configPaths,
+		logger:        logger,
+		plugins:       make([]CatalogPlugin, 0),
+		failedPlugins: make([]failedPlugin, 0),
 	}
 }
 
@@ -84,7 +92,9 @@ func (s *Server) Init(ctx context.Context) error {
 		s.logger.Info("initializing plugin", "plugin", p.Name(), "version", p.Version(), "basePath", basePath)
 
 		if err := p.Init(ctx, pluginCfg); err != nil {
-			return fmt.Errorf("plugin %s init failed: %w", p.Name(), err)
+			s.logger.Error("plugin init failed, continuing with remaining plugins", "plugin", p.Name(), "error", err)
+			s.failedPlugins = append(s.failedPlugins, failedPlugin{plugin: p, err: err})
+			continue
 		}
 
 		s.plugins = append(s.plugins, p)
@@ -215,6 +225,11 @@ func (s *Server) readyHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	for _, fp := range s.failedPlugins {
+		pluginStatus[fp.plugin.Name()] = false
+		allHealthy = false
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 
 	response := map[string]any{
@@ -238,14 +253,17 @@ func (s *Server) pluginsHandler(w http.ResponseWriter, r *http.Request) {
 	defer s.mu.RUnlock()
 
 	type pluginInfo struct {
-		Name        string `json:"name"`
-		Version     string `json:"version"`
-		Description string `json:"description"`
-		BasePath    string `json:"basePath"`
-		Healthy     bool   `json:"healthy"`
+		Name         string              `json:"name"`
+		Version      string              `json:"version"`
+		Description  string              `json:"description"`
+		BasePath     string              `json:"basePath"`
+		Healthy      bool                `json:"healthy"`
+		EntityKinds  []string            `json:"entityKinds,omitempty"`
+		Capabilities *PluginCapabilities `json:"capabilities,omitempty"`
+		Status       *PluginStatus       `json:"status,omitempty"`
 	}
 
-	plugins := make([]pluginInfo, 0, len(s.plugins))
+	plugins := make([]pluginInfo, 0, len(s.plugins)+len(s.failedPlugins))
 	for _, p := range s.plugins {
 		var basePath string
 		if bp, ok := p.(BasePathProvider); ok {
@@ -253,12 +271,47 @@ func (s *Server) pluginsHandler(w http.ResponseWriter, r *http.Request) {
 		} else {
 			basePath = fmt.Sprintf("/api/%s_catalog/%s", p.Name(), p.Version())
 		}
-		plugins = append(plugins, pluginInfo{
+		info := pluginInfo{
 			Name:        p.Name(),
 			Version:     p.Version(),
 			Description: p.Description(),
 			BasePath:    basePath,
 			Healthy:     p.Healthy(),
+		}
+
+		if cp, ok := p.(CapabilitiesProvider); ok {
+			caps := cp.Capabilities()
+			info.Capabilities = &caps
+			info.EntityKinds = caps.EntityKinds
+		}
+		if sp, ok := p.(StatusProvider); ok {
+			status := sp.Status()
+			info.Status = &status
+		}
+
+		plugins = append(plugins, info)
+	}
+
+	for _, fp := range s.failedPlugins {
+		var basePath string
+		if bp, ok := fp.plugin.(BasePathProvider); ok {
+			basePath = bp.BasePath()
+		} else {
+			basePath = fmt.Sprintf("/api/%s_catalog/%s", fp.plugin.Name(), fp.plugin.Version())
+		}
+		status := PluginStatus{
+			Enabled:     true,
+			Initialized: false,
+			Serving:     false,
+			LastError:   fp.err.Error(),
+		}
+		plugins = append(plugins, pluginInfo{
+			Name:        fp.plugin.Name(),
+			Version:     fp.plugin.Version(),
+			Description: fp.plugin.Description(),
+			BasePath:    basePath,
+			Healthy:     false,
+			Status:      &status,
 		})
 	}
 

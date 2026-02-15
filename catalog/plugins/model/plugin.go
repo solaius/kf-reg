@@ -17,6 +17,7 @@ import (
 	"github.com/kubeflow/model-registry/catalog/internal/db/models"
 	"github.com/kubeflow/model-registry/catalog/internal/db/service"
 	"github.com/kubeflow/model-registry/catalog/internal/server/openapi"
+	apimodels "github.com/kubeflow/model-registry/catalog/pkg/openapi"
 	"github.com/kubeflow/model-registry/internal/datastore"
 	"github.com/kubeflow/model-registry/internal/datastore/embedmd"
 	"github.com/kubeflow/model-registry/pkg/catalog/plugin"
@@ -78,36 +79,6 @@ func (p *ModelCatalogPlugin) Init(ctx context.Context, cfg plugin.Config) error 
 
 	p.logger.Info("initializing model catalog plugin")
 
-	// Build paths from config sources
-	// The paths are the config file origins that contain the sources
-	paths := make([]string, 0)
-	originPaths := make(map[string]bool)
-
-	for _, src := range cfg.Section.Sources {
-		if src.Origin != "" {
-			originPath := src.Origin
-			if !originPaths[originPath] {
-				paths = append(paths, originPath)
-				originPaths[originPath] = true
-			}
-		}
-	}
-
-	// If no origins found in sources, use ConfigPaths
-	if len(paths) == 0 {
-		paths = cfg.ConfigPaths
-	}
-
-	// Convert paths to absolute
-	absPaths := make([]string, 0, len(paths))
-	for _, path := range paths {
-		absPath, err := filepath.Abs(path)
-		if err != nil {
-			absPath = path
-		}
-		absPaths = append(absPaths, absPath)
-	}
-
 	// Initialize the services from the database connection
 	services, err := p.initServices(cfg.DB)
 	if err != nil {
@@ -115,15 +86,75 @@ func (p *ModelCatalogPlugin) Init(ctx context.Context, cfg plugin.Config) error 
 	}
 	p.services = services
 
-	// Create the loader with existing catalog code
-	p.loader = catalog.NewLoader(services, absPaths)
+	// Create the loader with no paths — we populate sources directly from the
+	// plugin config instead of having the old loader re-read the config file.
+	// This is necessary because the plugin server uses the new CatalogSourcesConfig
+	// format (with apiVersion/kind/catalogs map), while the old loader expects the
+	// legacy flat format. Pre-populating avoids the format mismatch.
+	p.loader = catalog.NewLoader(services, nil)
 	p.sources = p.loader.Sources
 	p.labels = p.loader.Labels
+
+	// Convert plugin config sources to the old loader's Source format
+	// and populate the SourceCollection directly.
+	sources := make(map[string]catalog.Source, len(cfg.Section.Sources))
+	for _, src := range cfg.Section.Sources {
+		origin := src.Origin
+		if origin == "" && len(cfg.ConfigPaths) > 0 {
+			origin = cfg.ConfigPaths[0]
+		}
+		if absOrigin, err := filepath.Abs(origin); err == nil {
+			origin = absOrigin
+		}
+
+		catSource := apimodels.CatalogSource{
+			Id:             src.ID,
+			Name:           src.Name,
+			Enabled:        src.Enabled,
+			Labels:         src.Labels,
+			IncludedModels: src.IncludedItems,
+			ExcludedModels: src.ExcludedItems,
+		}
+
+		sources[src.ID] = catalog.Source{
+			CatalogSource: catSource,
+			Type:          src.Type,
+			Properties:    src.Properties,
+			Origin:        origin,
+		}
+	}
+
+	if len(sources) > 0 {
+		origin := "plugin-config"
+		if len(cfg.ConfigPaths) > 0 {
+			if absOrigin, err := filepath.Abs(cfg.ConfigPaths[0]); err == nil {
+				origin = absOrigin
+			} else {
+				origin = cfg.ConfigPaths[0]
+			}
+		}
+		if err := p.loader.Sources.Merge(origin, sources); err != nil {
+			return fmt.Errorf("failed to populate sources: %w", err)
+		}
+	}
+
+	// Handle labels from plugin config
+	if len(cfg.Section.Labels) > 0 {
+		origin := "plugin-config"
+		if len(cfg.ConfigPaths) > 0 {
+			if absOrigin, err := filepath.Abs(cfg.ConfigPaths[0]); err == nil {
+				origin = absOrigin
+			}
+		}
+		if err := p.loader.Labels.Merge(origin, cfg.Section.Labels); err != nil {
+			p.logger.Warn("failed to populate labels", "error", err)
+		}
+	}
 
 	// Create the DB catalog provider
 	p.dbCatalog = catalog.NewDBCatalog(services, p.sources)
 
-	p.logger.Info("model catalog plugin initialized", "paths", absPaths)
+	p.logger.Info("model catalog plugin initialized", "sources", len(sources))
 
 	return nil
 }

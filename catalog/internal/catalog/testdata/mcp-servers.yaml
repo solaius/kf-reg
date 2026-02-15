@@ -1,0 +1,22 @@
+mcpservers:
+  - name: "filesystem-server"
+    description: "MCP server providing filesystem operations for reading, writing, and managing files"
+    serverUrl: "https://mcp.example.com/filesystem"
+    transportType: "stdio"
+    toolCount: 5
+    resourceCount: 3
+    promptCount: 2
+  - name: "database-query-server"
+    description: "MCP server for executing database queries and managing schemas"
+    serverUrl: "https://mcp.example.com/database"
+    transportType: "sse"
+    toolCount: 10
+    resourceCount: 8
+    promptCount: 0
+  - name: "web-search-server"
+    description: "MCP server providing web search and content extraction capabilities"
+    serverUrl: "https://mcp.example.com/search"
+    transportType: "http"
+    toolCount: 3
+    resourceCount: 0
+    promptCount: 1

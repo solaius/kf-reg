@@ -106,7 +106,24 @@ preprocess_plugin_spec() {
         fi
     fi
 
-    # 2. Update all $ref pointers to use prefixed schema names (except for common schemas)
+    # 2. Remove common schemas from the plugin spec to avoid corrupting the main catalog's definitions during merge
+    if [[ -n "$COMMON_SCHEMAS" ]]; then
+        IFS='|' read -ra COMMON_ARRAY <<< "$COMMON_SCHEMAS"
+        local del_expr=""
+        for schema in "${COMMON_ARRAY[@]}"; do
+            if $YQ eval ".components.schemas[\"${schema}\"]" "$temp_file" 2>/dev/null | grep -q -v '^null$'; then
+                if [[ -n "$del_expr" ]]; then
+                    del_expr="${del_expr} | "
+                fi
+                del_expr="${del_expr}del(.components.schemas[\"${schema}\"])"
+            fi
+        done
+        if [[ -n "$del_expr" ]]; then
+            $YQ eval -i "$del_expr" "$temp_file" 2>/dev/null || true
+        fi
+    fi
+
+    # 3. Update all $ref pointers to use prefixed schema names (except for common schemas)
     # First, prefix all schema references throughout the document
     sed -i 's|#/components/schemas/\([A-Za-z][A-Za-z0-9]*\)|#/components/schemas/'"${schema_prefix}"'\1|g' "$temp_file"
     # Then, un-prefix each common schema individually
@@ -121,13 +138,13 @@ preprocess_plugin_spec() {
         sed -i 's|#/components/schemas/'"${schema_prefix}"'BaseResourceDates|#/components/schemas/BaseResourceDates|g' "$temp_file"
     fi
 
-    # 3. Resolve external references to common schemas before merging
+    # 4. Resolve external references to common schemas before merging
     sed -i 's|lib/common.yaml#/components/schemas/|#/components/schemas/|g' "$temp_file"
 
-    # 4. Prefix operation IDs to ensure uniqueness
+    # 5. Prefix operation IDs to ensure uniqueness
     sed -i 's/operationId: \(.*\)/operationId: '"${op_prefix}"'\1/' "$temp_file"
 
-    # 5. Convert relative paths to absolute paths using the plugin's server base URL
+    # 6. Convert relative paths to absolute paths using the plugin's server base URL
     local plugin_base_url
     plugin_base_url=$($YQ eval '.servers[0].url' "$temp_file" 2>/dev/null || echo "")
     if [[ -n "$plugin_base_url" && "$plugin_base_url" != "null" ]]; then
@@ -154,7 +171,7 @@ preprocess_plugin_spec() {
         $YQ eval -i 'del(.servers)' "$temp_file" 2>/dev/null || true
     fi
 
-    # 6. Remove the info section to avoid overwriting main catalog's info during merge
+    # 7. Remove the info section to avoid overwriting main catalog's info during merge
     $YQ eval -i 'del(.info)' "$temp_file" 2>/dev/null || true
 }
 

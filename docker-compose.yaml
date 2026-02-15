@@ -125,4 +125,4 @@ configs:
   pginit:
     content: |
       CREATE DATABASE model_catalog;
-      GRANT ALL PRIVILEGES ON model_catalog TO postgres;
+      GRANT ALL PRIVILEGES ON DATABASE model_catalog TO postgres;

@@ -1,0 +1,17 @@
+apiVersion: catalog/v1alpha1
+kind: CatalogSources
+catalogs:
+  models:
+    sources:
+      - id: catalog1
+        name: "Catalog 1"
+        type: yaml
+        properties:
+          yamlCatalogPath: test-yaml-catalog.yaml
+  mcp:
+    sources:
+      - id: mcp1
+        name: "MCP Servers"
+        type: yaml
+        properties:
+          yamlCatalogPath: mcp-servers.yaml

@@ -2,6 +2,8 @@ package plugin
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -229,6 +231,211 @@ func TestServerStartStop(t *testing.T) {
 	err = server.Stop(context.Background())
 	require.NoError(t, err)
 	assert.True(t, plugin.stopCalled)
+
+	Reset()
+}
+
+// failingPlugin is a testPlugin whose Init always returns an error.
+type failingPlugin struct {
+	testPlugin
+	initErr error
+}
+
+func (p *failingPlugin) Init(ctx context.Context, cfg Config) error {
+	p.initCalled = true
+	return p.initErr
+}
+
+// capablePlugin is a testPlugin that implements CapabilitiesProvider.
+type capablePlugin struct {
+	testPlugin
+	capabilities PluginCapabilities
+}
+
+func (p *capablePlugin) Capabilities() PluginCapabilities {
+	return p.capabilities
+}
+
+func TestServerInitPluginFailureIsolation(t *testing.T) {
+	Reset()
+
+	failing := &failingPlugin{
+		testPlugin: testPlugin{
+			name:    "failing",
+			version: "v1",
+			healthy: false,
+		},
+		initErr: fmt.Errorf("connection refused"),
+	}
+	Register(failing)
+
+	working := &testPlugin{
+		name:    "working",
+		version: "v1",
+		healthy: true,
+	}
+	Register(working)
+
+	cfg := &CatalogSourcesConfig{
+		Catalogs: map[string]CatalogSection{
+			"failing": {},
+			"working": {},
+		},
+	}
+
+	server := NewServer(cfg, []string{}, nil, nil)
+	err := server.Init(context.Background())
+	require.NoError(t, err, "server Init should not fail when a plugin fails")
+
+	// Only the working plugin should be in the initialized list
+	assert.Equal(t, 1, len(server.Plugins()))
+	assert.Equal(t, "working", server.Plugins()[0].Name())
+	assert.True(t, working.initCalled)
+	assert.True(t, failing.initCalled)
+
+	// Verify /api/plugins shows both plugins (one with error status)
+	router := server.MountRoutes()
+	req := httptest.NewRequest("GET", "/api/plugins", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var response struct {
+		Plugins []struct {
+			Name    string        `json:"name"`
+			Healthy bool          `json:"healthy"`
+			Status  *PluginStatus `json:"status,omitempty"`
+		} `json:"plugins"`
+		Count int `json:"count"`
+	}
+	err = json.Unmarshal(rec.Body.Bytes(), &response)
+	require.NoError(t, err)
+
+	assert.Equal(t, 2, response.Count)
+
+	// Find the failed plugin in the response
+	var foundFailing bool
+	for _, p := range response.Plugins {
+		if p.Name == "failing" {
+			foundFailing = true
+			assert.False(t, p.Healthy)
+			require.NotNil(t, p.Status)
+			assert.False(t, p.Status.Initialized)
+			assert.False(t, p.Status.Serving)
+			assert.Contains(t, p.Status.LastError, "connection refused")
+		}
+	}
+	assert.True(t, foundFailing, "failed plugin should appear in /api/plugins response")
+
+	Reset()
+}
+
+func TestServerPluginsEndpointWithCapabilities(t *testing.T) {
+	Reset()
+
+	plugin := &capablePlugin{
+		testPlugin: testPlugin{
+			name:        "models",
+			version:     "v1alpha1",
+			description: "Model catalog",
+			healthy:     true,
+		},
+		capabilities: PluginCapabilities{
+			EntityKinds:  []string{"Model", "ModelVersion", "ModelArtifact"},
+			ListEntities: true,
+			GetEntity:    true,
+			ListSources:  true,
+			Artifacts:    true,
+		},
+	}
+	Register(plugin)
+
+	cfg := &CatalogSourcesConfig{
+		Catalogs: map[string]CatalogSection{
+			"models": {},
+		},
+	}
+
+	server := NewServer(cfg, []string{}, nil, nil)
+	err := server.Init(context.Background())
+	require.NoError(t, err)
+
+	router := server.MountRoutes()
+	req := httptest.NewRequest("GET", "/api/plugins", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var response struct {
+		Plugins []struct {
+			Name         string              `json:"name"`
+			EntityKinds  []string            `json:"entityKinds,omitempty"`
+			Capabilities *PluginCapabilities `json:"capabilities,omitempty"`
+		} `json:"plugins"`
+	}
+	err = json.Unmarshal(rec.Body.Bytes(), &response)
+	require.NoError(t, err)
+
+	require.Equal(t, 1, len(response.Plugins))
+	p := response.Plugins[0]
+	assert.Equal(t, "models", p.Name)
+
+	// Verify capabilities are included
+	require.NotNil(t, p.Capabilities)
+	assert.True(t, p.Capabilities.ListEntities)
+	assert.True(t, p.Capabilities.GetEntity)
+	assert.True(t, p.Capabilities.ListSources)
+	assert.True(t, p.Capabilities.Artifacts)
+	assert.Equal(t, []string{"Model", "ModelVersion", "ModelArtifact"}, p.Capabilities.EntityKinds)
+
+	// Verify entityKinds is also set at top level
+	assert.Equal(t, []string{"Model", "ModelVersion", "ModelArtifact"}, p.EntityKinds)
+
+	Reset()
+}
+
+func TestServerReadyEndpointWithFailedPlugin(t *testing.T) {
+	Reset()
+
+	failing := &failingPlugin{
+		testPlugin: testPlugin{
+			name:    "broken",
+			version: "v1",
+			healthy: false,
+		},
+		initErr: fmt.Errorf("database unavailable"),
+	}
+	Register(failing)
+
+	cfg := &CatalogSourcesConfig{
+		Catalogs: map[string]CatalogSection{
+			"broken": {},
+		},
+	}
+
+	server := NewServer(cfg, []string{}, nil, nil)
+	err := server.Init(context.Background())
+	require.NoError(t, err, "server Init should succeed even with failed plugin")
+
+	router := server.MountRoutes()
+	req := httptest.NewRequest("GET", "/readyz", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
+
+	var response struct {
+		Status  string          `json:"status"`
+		Plugins map[string]bool `json:"plugins"`
+	}
+	err = json.Unmarshal(rec.Body.Bytes(), &response)
+	require.NoError(t, err)
+
+	assert.Equal(t, "not_ready", response.Status)
+	assert.Contains(t, response.Plugins, "broken")
+	assert.False(t, response.Plugins["broken"])
 
 	Reset()
 }

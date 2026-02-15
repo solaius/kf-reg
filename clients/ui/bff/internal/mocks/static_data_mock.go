@@ -2267,3 +2267,41 @@ func CreateCatalogSourcePreviewMockWithFilter(filterStatus string, pageSize int,
 		Size:          int32(len(pagedModels)),
 	}
 }
+
+func GetCatalogPluginListMock() models.CatalogPluginList {
+	return models.CatalogPluginList{
+		Plugins: []models.CatalogPlugin{
+			{
+				Name:        "model",
+				Version:     "v1alpha1",
+				Description: "Model catalog for ML models",
+				BasePath:    "/api/model_catalog/v1alpha1",
+				Healthy:     true,
+				EntityKinds: []string{"CatalogModel"},
+				Capabilities: &models.CatalogPluginCapabilities{
+					EntityKinds:  []string{"CatalogModel"},
+					ListEntities: true,
+					GetEntity:    true,
+					ListSources:  true,
+					Artifacts:    true,
+				},
+			},
+			{
+				Name:        "mcp",
+				Version:     "v1alpha1",
+				Description: "McpServer catalog",
+				BasePath:    "/api/mcp_catalog/v1alpha1",
+				Healthy:     true,
+				EntityKinds: []string{"McpServer"},
+				Capabilities: &models.CatalogPluginCapabilities{
+					EntityKinds:  []string{"McpServer"},
+					ListEntities: true,
+					GetEntity:    true,
+					ListSources:  true,
+					Artifacts:    false,
+				},
+			},
+		},
+		Count: 2,
+	}
+}

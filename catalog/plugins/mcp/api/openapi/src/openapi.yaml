@@ -1,0 +1,77 @@
+openapi: 3.0.3
+info:
+  title: mcp Catalog API
+  version: v1alpha1
+  description: API for the mcp catalog service
+
+servers:
+  - url: /api/mcp_catalog/v1alpha1
+
+paths:
+  /mcpservers:
+    get:
+      summary: List McpServer entities
+      operationId: listMcpServers
+      parameters:
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: pageToken
+          in: query
+          schema:
+            type: string
+        - name: q
+          in: query
+          schema:
+            type: string
+          description: Search query
+        - name: filterQuery
+          in: query
+          schema:
+            type: string
+          description: SQL-like filter expression (e.g., "protocol = 'http' AND toolCount > 5")
+        - name: orderBy
+          in: query
+          schema:
+            type: string
+          description: Field to order results by
+        - name: sortOrder
+          in: query
+          schema:
+            type: string
+            enum: [ASC, DESC]
+            default: ASC
+          description: Sort direction
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McpServerList'
+
+  /mcpservers/{name}:
+    get:
+      summary: Get a McpServer by name
+      operationId: getMcpServer
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McpServer'
+        '404':
+          description: Not found
+
+# You can add custom paths, parameters, and responses below.
+# Schemas are defined in ./generated/components.yaml and merged via 'make api/openapi'.
+# Use local $refs like '#/components/schemas/YourSchema' - they resolve after merge.

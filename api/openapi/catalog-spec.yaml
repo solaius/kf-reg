@@ -2,7 +2,10 @@ openapi: 3.0.3
 info:
   title: Model Catalog REST API
   version: v1alpha1
-  description: REST API for Model Registry to create and manage ML model metadata
+  description: |-
+    REST API for Model Registry to create and manage ML model metadata
+
+    This unified specification includes APIs from the following plugins: mcp.
   license:
     name: Apache 2.0
     url: "https://www.apache.org/licenses/LICENSE-2.0"
@@ -10,6 +13,68 @@ servers:
   - url: "https://localhost:8080"
   - url: "http://localhost:8080"
 paths:
+  /api/mcp_catalog/v1alpha1/mcpservers:
+    get:
+      summary: List McpServer entities
+      operationId: mcp_listMcpServers
+      parameters:
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: pageToken
+          in: query
+          schema:
+            type: string
+        - name: q
+          in: query
+          schema:
+            type: string
+          description: Search query
+        - name: filterQuery
+          in: query
+          schema:
+            type: string
+          description: SQL-like filter expression (e.g., "protocol = 'http' AND toolCount > 5")
+        - name: orderBy
+          in: query
+          schema:
+            type: string
+          description: Field to order results by
+        - name: sortOrder
+          in: query
+          schema:
+            type: string
+            enum: [ASC, DESC]
+            default: ASC
+          description: Sort direction
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Mcp_McpServerList'
+  /api/mcp_catalog/v1alpha1/mcpservers/{name}:
+    get:
+      summary: Get a McpServer by name
+      operationId: mcp_getMcpServer
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Mcp_McpServer'
+        '404':
+          description: Not found
   /api/model_catalog/v1alpha1/labels:
     summary: Path used to get the list of catalog labels.
     description: >-
@@ -951,6 +1016,33 @@ components:
             type: object
             additionalProperties:
               $ref: "#/components/schemas/FieldFilter"
+    Mcp_McpServer:
+      allOf:
+        - $ref: '#/components/schemas/BaseResource'
+        - type: object
+          required:
+            - name
+            - serverUrl
+          properties:
+            serverUrl:
+              type: string
+            transportType:
+              type: string
+            toolCount:
+              type: integer
+            resourceCount:
+              type: integer
+            promptCount:
+              type: integer
+    Mcp_McpServerList:
+      allOf:
+        - $ref: '#/components/schemas/BaseResourceList'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Mcp_McpServer'
     MetadataBoolValue:
       description: A bool property value.
       type: object
@@ -1542,4 +1634,5 @@ components:
 security:
   - Bearer: []
 tags: []
-x-catalog-plugins: null
+x-catalog-plugins:
+  - mcp
