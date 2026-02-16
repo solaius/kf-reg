@@ -4,6 +4,7 @@ import { CatalogManagementContextProvider } from '~/app/context/catalogManagemen
 import CatalogManagementPage from './screens/CatalogManagementPage';
 import PluginDetailPage from './screens/PluginDetailPage';
 import PluginSourcesPage from './screens/PluginSourcesPage';
+import PluginSourceConfigPage from './screens/PluginSourceConfigPage';
 import PluginDiagnosticsPage from './screens/PluginDiagnosticsPage';
 
 const CatalogManagementRoutes: React.FC = () => (
@@ -15,6 +16,8 @@ const CatalogManagementRoutes: React.FC = () => (
         <Route path="sources" element={<PluginSourcesPage />} />
         <Route path="diagnostics" element={<PluginDiagnosticsPage />} />
       </Route>
+      <Route path="plugin/:pluginName/sources/add" element={<PluginSourceConfigPage />} />
+      <Route path="plugin/:pluginName/sources/:sourceId/manage" element={<PluginSourceConfigPage />} />
       <Route path="*" element={<Navigate to="." replace />} />
     </Routes>
   </CatalogManagementContextProvider>

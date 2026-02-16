@@ -12,3 +12,9 @@ export const catalogPluginSourcesUrl = (pluginName: string): string =>
 
 export const catalogPluginDiagnosticsUrl = (pluginName: string): string =>
   `${catalogPluginUrl(pluginName)}/diagnostics`;
+
+export const catalogPluginAddSourceUrl = (pluginName: string): string =>
+  `${catalogPluginSourcesUrl(pluginName)}/add`;
+
+export const catalogPluginManageSourceUrl = (pluginName: string, sourceId: string): string =>
+  `${catalogPluginSourcesUrl(pluginName)}/${encodeURIComponent(sourceId)}/manage`;

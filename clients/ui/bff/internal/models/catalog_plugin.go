@@ -17,6 +17,13 @@ type CatalogPluginStatus struct {
 	LastError   string `json:"lastError,omitempty"`
 }
 
+// CatalogPluginManagement describes management capabilities of a plugin.
+type CatalogPluginManagement struct {
+	SourceManager bool `json:"sourceManager"`
+	Refresh       bool `json:"refresh"`
+	Diagnostics   bool `json:"diagnostics"`
+}
+
 // CatalogPlugin represents a single plugin from the catalog server.
 type CatalogPlugin struct {
 	Name         string                     `json:"name"`
@@ -27,6 +34,7 @@ type CatalogPlugin struct {
 	EntityKinds  []string                   `json:"entityKinds,omitempty"`
 	Capabilities *CatalogPluginCapabilities `json:"capabilities,omitempty"`
 	Status       *CatalogPluginStatus       `json:"status,omitempty"`
+	Management   *CatalogPluginManagement   `json:"management,omitempty"`
 }
 
 // CatalogPluginList represents the response from GET /api/plugins.

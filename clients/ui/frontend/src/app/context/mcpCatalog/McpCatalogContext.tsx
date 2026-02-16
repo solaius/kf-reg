@@ -7,6 +7,8 @@ import {
   McpServerList,
   McpCatalogFilterKey,
   McpCatalogFilterStates,
+  MCP_ALL_CATEGORIES,
+  MCP_OTHER_SERVERS,
 } from '~/app/mcpCatalogTypes';
 import { BFF_API_VERSION, URL_PREFIX } from '~/app/utilities/const';
 
@@ -30,6 +32,16 @@ export type McpCatalogContextType = {
     value: McpCatalogFilterStates[K],
   ) => void;
   filteredServers: McpServer[];
+  selectedCategory: string;
+  setSelectedCategory: (category: string) => void;
+  clearAllFilters: () => void;
+  availableFilterValues: {
+    deploymentModes: string[];
+    categories: string[];
+    licenses: string[];
+    transports: string[];
+    sourceLabels: string[];
+  };
 };
 
 export const McpCatalogContext = React.createContext<McpCatalogContextType>({
@@ -48,6 +60,16 @@ export const McpCatalogContext = React.createContext<McpCatalogContextType>({
   },
   setFilterData: () => undefined,
   filteredServers: [],
+  selectedCategory: MCP_ALL_CATEGORIES,
+  setSelectedCategory: () => undefined,
+  clearAllFilters: () => undefined,
+  availableFilterValues: {
+    deploymentModes: [],
+    categories: [],
+    licenses: [],
+    transports: [],
+    sourceLabels: [],
+  },
 });
 
 type McpCatalogContextProviderProps = {
@@ -74,12 +96,49 @@ export const McpCatalogContextProvider: React.FC<McpCatalogContextProviderProps>
   const [mcpServersLoaded, setMcpServersLoaded] = React.useState(false);
   const [mcpServersLoadError, setMcpServersLoadError] = React.useState<Error | undefined>();
   const [searchTerm, setSearchTerm] = React.useState('');
+  const [selectedCategory, setSelectedCategory] = React.useState(MCP_ALL_CATEGORIES);
   const [filterData, setFilterData] = useGenericObjectState<McpCatalogFilterStates>({
     [McpCatalogFilterKey.DEPLOYMENT_MODE]: [],
     [McpCatalogFilterKey.CATEGORY]: [],
     [McpCatalogFilterKey.LICENSE]: [],
     [McpCatalogFilterKey.TRANSPORT]: [],
   });
+
+  const availableFilterValues = React.useMemo(() => {
+    const deploymentModes = [
+      ...new Set(mcpServers.map((s) => s.deploymentMode).filter(Boolean)),
+    ] as string[];
+    const categories = [
+      ...new Set(mcpServers.map((s) => s.category).filter(Boolean)),
+    ] as string[];
+    const licenses = [
+      ...new Set(mcpServers.map((s) => s.license).filter(Boolean)),
+    ] as string[];
+    const transports = [
+      ...new Set(
+        mcpServers.flatMap((s) => {
+          const t = s.supportedTransports || s.transportType || '';
+          return t
+            .split(',')
+            .map((v) => v.trim())
+            .filter(Boolean);
+        }),
+      ),
+    ];
+    const sourceLabels = [
+      ...new Set(mcpServers.map((s) => s.sourceLabel).filter(Boolean)),
+    ] as string[];
+    return { deploymentModes, categories, licenses, transports, sourceLabels };
+  }, [mcpServers]);
+
+  const clearAllFilters = React.useCallback(() => {
+    setFilterData(McpCatalogFilterKey.DEPLOYMENT_MODE, []);
+    setFilterData(McpCatalogFilterKey.CATEGORY, []);
+    setFilterData(McpCatalogFilterKey.LICENSE, []);
+    setFilterData(McpCatalogFilterKey.TRANSPORT, []);
+    setSelectedCategory(MCP_ALL_CATEGORIES);
+    setSearchTerm('');
+  }, [setFilterData]);
 
   React.useEffect(() => {
     if (!apiState.apiAvailable) {
@@ -147,8 +206,17 @@ export const McpCatalogContextProvider: React.FC<McpCatalogContextProviderProps>
       );
     }
 
+    // Source label tab filter
+    if (selectedCategory !== MCP_ALL_CATEGORIES) {
+      if (selectedCategory === MCP_OTHER_SERVERS) {
+        result = result.filter((s) => !s.sourceLabel);
+      } else {
+        result = result.filter((s) => s.sourceLabel === selectedCategory);
+      }
+    }
+
     return result;
-  }, [mcpServers, searchTerm, filterData]);
+  }, [mcpServers, searchTerm, filterData, selectedCategory]);
 
   const contextValue = React.useMemo(
     () => ({
@@ -161,6 +229,10 @@ export const McpCatalogContextProvider: React.FC<McpCatalogContextProviderProps>
       filterData,
       setFilterData,
       filteredServers,
+      selectedCategory,
+      setSelectedCategory,
+      clearAllFilters,
+      availableFilterValues,
     }),
     [
       apiState,
@@ -171,6 +243,9 @@ export const McpCatalogContextProvider: React.FC<McpCatalogContextProviderProps>
       filterData,
       filteredServers,
       setFilterData,
+      selectedCategory,
+      clearAllFilters,
+      availableFilterValues,
     ],
   );
 

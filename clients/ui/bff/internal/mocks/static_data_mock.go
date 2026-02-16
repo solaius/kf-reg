@@ -2268,6 +2268,7 @@ func CreateCatalogSourcePreviewMockWithFilter(filterStatus string, pageSize int,
 	}
 }
 
+
 func GetCatalogPluginListMock() models.CatalogPluginList {
 	return models.CatalogPluginList{
 		Plugins: []models.CatalogPlugin{
@@ -2285,6 +2286,11 @@ func GetCatalogPluginListMock() models.CatalogPluginList {
 					ListSources:  true,
 					Artifacts:    true,
 				},
+				Management: &models.CatalogPluginManagement{
+					SourceManager: true,
+					Refresh:       true,
+					Diagnostics:   true,
+				},
 			},
 			{
 				Name:        "mcp",
@@ -2299,6 +2305,11 @@ func GetCatalogPluginListMock() models.CatalogPluginList {
 					GetEntity:    true,
 					ListSources:  true,
 					Artifacts:    false,
+				},
+				Management: &models.CatalogPluginManagement{
+					SourceManager: true,
+					Refresh:       true,
+					Diagnostics:   true,
 				},
 			},
 		},

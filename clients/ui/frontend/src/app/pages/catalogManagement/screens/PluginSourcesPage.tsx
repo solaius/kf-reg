@@ -4,14 +4,34 @@ import {
   Button,
   Label,
   Spinner,
+  Switch,
   Toolbar,
   ToolbarContent,
   ToolbarItem,
 } from '@patternfly/react-core';
-import { SyncIcon } from '@patternfly/react-icons';
-import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table';
+import { PlusCircleIcon, SyncIcon } from '@patternfly/react-icons';
+import {
+  ActionsColumn,
+  IAction,
+  Table,
+  Thead,
+  Tr,
+  Th,
+  Tbody,
+  Td,
+} from '@patternfly/react-table';
+import { useNavigate } from 'react-router-dom';
 import { CatalogManagementContext } from '~/app/context/catalogManagement/CatalogManagementContext';
 import { SourceInfo } from '~/app/catalogManagementTypes';
+import {
+  catalogPluginAddSourceUrl,
+  catalogPluginManageSourceUrl,
+} from '~/app/routes/catalogManagement/catalogManagement';
+import {
+  addSourceUrl as modelCatalogAddSourceUrl,
+  manageSourceUrl as modelCatalogManageSourceUrl,
+} from '~/app/routes/modelCatalogSettings/modelCatalogSettings';
+import DeleteModal from '~/app/shared/components/DeleteModal';
 
 const statusLabelColor = (
   state: string,
@@ -30,7 +50,19 @@ const statusLabelColor = (
   }
 };
 
+const sourceTypeLabel = (type: string): string => {
+  switch (type) {
+    case 'yaml':
+      return 'YAML file';
+    case 'huggingface':
+      return 'Hugging Face';
+    default:
+      return type;
+  }
+};
+
 const PluginSourcesPage: React.FC = () => {
+  const navigate = useNavigate();
   const { apiState, selectedPlugin } = React.useContext(CatalogManagementContext);
 
   const [sources, setSources] = React.useState<SourceInfo[]>([]);
@@ -38,6 +70,9 @@ const PluginSourcesPage: React.FC = () => {
   const [loadError, setLoadError] = React.useState<string | undefined>();
   const [refreshing, setRefreshing] = React.useState(false);
   const [refreshMessage, setRefreshMessage] = React.useState<string | undefined>();
+  const [deleteSource, setDeleteSource] = React.useState<SourceInfo | undefined>();
+  const [deleting, setDeleting] = React.useState(false);
+  const [deleteError, setDeleteError] = React.useState<Error | undefined>();
 
   const fetchSources = React.useCallback(() => {
     if (!apiState.apiAvailable || !selectedPlugin) {
@@ -83,12 +118,12 @@ const PluginSourcesPage: React.FC = () => {
   }, [apiState, selectedPlugin, fetchSources]);
 
   const handleToggleEnable = React.useCallback(
-    async (source: SourceInfo) => {
+    async (source: SourceInfo, enabled: boolean) => {
       if (!apiState.apiAvailable || !selectedPlugin) {
         return;
       }
       try {
-        await apiState.api.enablePluginSource({}, selectedPlugin.name, source.id, !source.enabled);
+        await apiState.api.enablePluginSource({}, selectedPlugin.name, source.id, enabled);
         fetchSources();
       } catch (err) {
         setLoadError(`Failed to toggle source: ${err instanceof Error ? err.message : String(err)}`);
@@ -97,20 +132,22 @@ const PluginSourcesPage: React.FC = () => {
     [apiState, selectedPlugin, fetchSources],
   );
 
-  const handleDelete = React.useCallback(
-    async (source: SourceInfo) => {
-      if (!apiState.apiAvailable || !selectedPlugin) {
-        return;
-      }
-      try {
-        await apiState.api.deletePluginSource({}, selectedPlugin.name, source.id);
-        fetchSources();
-      } catch (err) {
-        setLoadError(`Failed to delete source: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    },
-    [apiState, selectedPlugin, fetchSources],
-  );
+  const handleDeleteConfirm = React.useCallback(async () => {
+    if (!apiState.apiAvailable || !selectedPlugin || !deleteSource) {
+      return;
+    }
+    setDeleting(true);
+    setDeleteError(undefined);
+    try {
+      await apiState.api.deletePluginSource({}, selectedPlugin.name, deleteSource.id);
+      setDeleteSource(undefined);
+      fetchSources();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      setDeleting(false);
+    }
+  }, [apiState, selectedPlugin, deleteSource, fetchSources]);
 
   if (!selectedPlugin) {
     return null;
@@ -118,11 +155,58 @@ const PluginSourcesPage: React.FC = () => {
 
   const hasRefresh = selectedPlugin.management?.refresh;
   const hasSourceManager = selectedPlugin.management?.sourceManager;
+  const isModelPlugin = selectedPlugin.name === 'model';
+
+  const getAddSourceUrl = (): string =>
+    isModelPlugin ? modelCatalogAddSourceUrl() : catalogPluginAddSourceUrl(selectedPlugin.name);
+
+  const getManageSourceUrl = (sourceId: string): string =>
+    isModelPlugin
+      ? modelCatalogManageSourceUrl(sourceId)
+      : catalogPluginManageSourceUrl(selectedPlugin.name, sourceId);
+
+  const getRowActions = (source: SourceInfo): IAction[] => [
+    {
+      title: 'Manage source',
+      onClick: () => {
+        navigate(getManageSourceUrl(source.id));
+      },
+    },
+    {
+      title: 'View in catalog',
+      onClick: () => {
+        // Map plugin names to their catalog routes
+        const catalogRoutes: Record<string, string> = {
+          model: '/model-catalog',
+          mcp: '/mcp-catalog',
+        };
+        const basePath = catalogRoutes[selectedPlugin.name] || `/${selectedPlugin.name}-catalog`;
+        navigate(`${basePath}?source=${encodeURIComponent(source.id)}`);
+      },
+    },
+    { isSeparator: true },
+    {
+      title: 'Delete source',
+      onClick: () => setDeleteSource(source),
+    },
+  ];
 
   return (
     <>
       <Toolbar>
         <ToolbarContent>
+          {hasSourceManager && (
+            <ToolbarItem>
+              <Button
+                variant="primary"
+                icon={<PlusCircleIcon />}
+                onClick={() => navigate(getAddSourceUrl())}
+                data-testid="add-source-button"
+              >
+                Add a source
+              </Button>
+            </ToolbarItem>
+          )}
           {hasRefresh && (
             <ToolbarItem>
               <Button
@@ -159,25 +243,34 @@ const PluginSourcesPage: React.FC = () => {
         <Table aria-label="Plugin sources" data-testid="plugin-sources-table">
           <Thead>
             <Tr>
-              <Th>Name</Th>
-              <Th>ID</Th>
-              <Th>Type</Th>
+              <Th>Source name</Th>
+              <Th>Source type</Th>
+              <Th>Visible in catalog</Th>
               <Th>Status</Th>
               <Th>Entities</Th>
-              {hasSourceManager && <Th>Actions</Th>}
+              {hasSourceManager && <Th>Manage source</Th>}
+              {hasSourceManager && <Th />}
             </Tr>
           </Thead>
           <Tbody>
             {sources.length === 0 ? (
               <Tr>
-                <Td colSpan={hasSourceManager ? 6 : 5}>No sources configured.</Td>
+                <Td colSpan={hasSourceManager ? 7 : 5}>No sources configured.</Td>
               </Tr>
             ) : (
               sources.map((source) => (
                 <Tr key={source.id} data-testid={`source-row-${source.id}`}>
-                  <Td dataLabel="Name">{source.name}</Td>
-                  <Td dataLabel="ID">{source.id}</Td>
-                  <Td dataLabel="Type">{source.type}</Td>
+                  <Td dataLabel="Source name">{source.name}</Td>
+                  <Td dataLabel="Source type">{sourceTypeLabel(source.type)}</Td>
+                  <Td dataLabel="Visible in catalog">
+                    <Switch
+                      id={`toggle-${source.id}`}
+                      aria-label={`Toggle visibility for ${source.name}`}
+                      isChecked={source.enabled}
+                      onChange={(_event, checked) => handleToggleEnable(source, checked)}
+                      data-testid={`toggle-enable-${source.id}`}
+                    />
+                  </Td>
                   <Td dataLabel="Status">
                     <Label color={statusLabelColor(source.status.state)}>
                       {source.status.state}
@@ -188,22 +281,21 @@ const PluginSourcesPage: React.FC = () => {
                   </Td>
                   <Td dataLabel="Entities">{source.status.entityCount}</Td>
                   {hasSourceManager && (
-                    <Td dataLabel="Actions">
+                    <Td dataLabel="Manage source">
                       <Button
                         variant="link"
-                        onClick={() => handleToggleEnable(source)}
-                        data-testid={`toggle-enable-${source.id}`}
+                        onClick={() =>
+                          navigate(getManageSourceUrl(source.id))
+                        }
+                        data-testid={`manage-source-${source.id}`}
                       >
-                        {source.enabled ? 'Disable' : 'Enable'}
+                        Manage source
                       </Button>
-                      <Button
-                        variant="link"
-                        isDanger
-                        onClick={() => handleDelete(source)}
-                        data-testid={`delete-source-${source.id}`}
-                      >
-                        Delete
-                      </Button>
+                    </Td>
+                  )}
+                  {hasSourceManager && (
+                    <Td isActionCell>
+                      <ActionsColumn items={getRowActions(source)} />
                     </Td>
                   )}
                 </Tr>
@@ -211,6 +303,26 @@ const PluginSourcesPage: React.FC = () => {
             )}
           </Tbody>
         </Table>
+      )}
+
+      {deleteSource && (
+        <DeleteModal
+          title={`Delete source ${deleteSource.name}?`}
+          onClose={() => {
+            setDeleteSource(undefined);
+            setDeleteError(undefined);
+          }}
+          deleting={deleting}
+          onDelete={handleDeleteConfirm}
+          deleteName={deleteSource.name}
+          error={deleteError}
+          testId="delete-source-modal"
+        >
+          <p>
+            This will permanently remove the source <strong>{deleteSource.name}</strong> and all its
+            entities from the catalog.
+          </p>
+        </DeleteModal>
       )}
     </>
   );

@@ -1,5 +1,28 @@
 package models
 
+// McpToolParameter represents a parameter for an MCP tool.
+type McpToolParameter struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Description string `json:"description"`
+	Required    bool   `json:"required"`
+}
+
+// McpTool represents a tool provided by an MCP server.
+type McpTool struct {
+	Name        string             `json:"name"`
+	Description string             `json:"description"`
+	AccessType  string             `json:"accessType"`
+	Parameters  []McpToolParameter `json:"parameters,omitempty"`
+}
+
+// McpResource represents a resource provided by an MCP server.
+type McpResource struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	URI         string `json:"uri,omitempty"`
+}
+
 // McpServer represents an MCP server entity from the catalog.
 type McpServer struct {
 	ID                  string         `json:"id,omitempty"`
@@ -20,6 +43,14 @@ type McpServer struct {
 	ToolCount           int            `json:"toolCount,omitempty"`
 	ResourceCount       int            `json:"resourceCount,omitempty"`
 	PromptCount         int            `json:"promptCount,omitempty"`
+	Tools               []McpTool      `json:"tools,omitempty"`
+	Resources           []McpResource  `json:"resources,omitempty"`
+	Readme              string         `json:"readme,omitempty"`
+	SourceUrl           string         `json:"sourceUrl,omitempty"`
+	Version             string         `json:"version,omitempty"`
+	LastModified        string         `json:"lastModified,omitempty"`
+	Tags                []string       `json:"tags,omitempty"`
+	SourceLabel         string         `json:"sourceLabel,omitempty"`
 	CustomProperties    map[string]any `json:"customProperties,omitempty"`
 }
 

@@ -3,34 +3,65 @@ import {
   Alert,
   Breadcrumb,
   BreadcrumbItem,
-  DescriptionList,
-  DescriptionListDescription,
-  DescriptionListGroup,
-  DescriptionListTerm,
+  Card,
+  CardBody,
+  CardTitle,
   Flex,
   FlexItem,
+  Grid,
+  GridItem,
   Label,
   PageSection,
+  Pagination,
+  SearchInput,
   Spinner,
-  Tab,
-  Tabs,
-  TabTitleText,
   Title,
 } from '@patternfly/react-core';
 import { CheckCircleIcon, CubesIcon } from '@patternfly/react-icons';
 import { Link, useParams } from 'react-router-dom';
 import { McpCatalogContext } from '~/app/context/mcpCatalog/McpCatalogContext';
 import { mcpCatalogUrl, MCP_CATALOG_PAGE_TITLE } from '~/app/routes/mcpCatalog/mcpCatalog';
+import McpToolCard from '~/app/pages/mcpCatalog/components/McpToolCard';
+import McpReadme from '~/app/pages/mcpCatalog/components/McpReadme';
+import McpServerDetailsSidebar from '~/app/pages/mcpCatalog/components/McpServerDetailsSidebar';
+
+const TOOLS_PER_PAGE = 5;
 
 const McpServerDetailPage: React.FC = () => {
   const { serverName } = useParams<{ serverName: string }>();
   const { mcpServers, mcpServersLoaded } = React.useContext(McpCatalogContext);
-  const [activeTabKey, setActiveTabKey] = React.useState(0);
+
+  const [toolSearchTerm, setToolSearchTerm] = React.useState('');
+  const [toolPage, setToolPage] = React.useState(1);
 
   const server = React.useMemo(
     () => mcpServers.find((s) => s.name === serverName),
     [mcpServers, serverName],
   );
+
+  const filteredTools = React.useMemo(() => {
+    if (!server?.tools) {
+      return [];
+    }
+    if (!toolSearchTerm) {
+      return server.tools;
+    }
+    const term = toolSearchTerm.toLowerCase();
+    return server.tools.filter(
+      (t) =>
+        t.name.toLowerCase().includes(term) || t.description.toLowerCase().includes(term),
+    );
+  }, [server?.tools, toolSearchTerm]);
+
+  const pagedTools = React.useMemo(() => {
+    const start = (toolPage - 1) * TOOLS_PER_PAGE;
+    return filteredTools.slice(start, start + TOOLS_PER_PAGE);
+  }, [filteredTools, toolPage]);
+
+  // Reset to page 1 when search changes
+  React.useEffect(() => {
+    setToolPage(1);
+  }, [toolSearchTerm]);
 
   if (!mcpServersLoaded) {
     return (
@@ -47,6 +78,8 @@ const McpServerDetailPage: React.FC = () => {
       </PageSection>
     );
   }
+
+  const toolCount = server.tools?.length ?? server.toolCount ?? 0;
 
   return (
     <>
@@ -83,78 +116,66 @@ const McpServerDetailPage: React.FC = () => {
             {server.certified && <Label color="purple">Certified</Label>}
           </FlexItem>
         </Flex>
-        {server.description && <p className="pf-v6-u-mt-md">{server.description}</p>}
       </PageSection>
       <PageSection>
-        <Tabs
-          activeKey={activeTabKey}
-          onSelect={(_event, key) => setActiveTabKey(key as number)}
-        >
-          <Tab eventKey={0} title={<TabTitleText>Overview</TabTitleText>}>
-            <PageSection padding={{ default: 'noPadding' }}>
-              <DescriptionList className="pf-v6-u-mt-lg">
-                <DescriptionListGroup>
-                  <DescriptionListTerm>Server URL</DescriptionListTerm>
-                  <DescriptionListDescription>{server.serverUrl}</DescriptionListDescription>
-                </DescriptionListGroup>
-                <DescriptionListGroup>
-                  <DescriptionListTerm>Deployment Mode</DescriptionListTerm>
-                  <DescriptionListDescription>
-                    <Label color={server.deploymentMode === 'local' ? 'blue' : 'orange'}>
-                      {server.deploymentMode || 'unknown'}
-                    </Label>
-                  </DescriptionListDescription>
-                </DescriptionListGroup>
-                {server.image && (
-                  <DescriptionListGroup>
-                    <DescriptionListTerm>Container Image</DescriptionListTerm>
-                    <DescriptionListDescription>{server.image}</DescriptionListDescription>
-                  </DescriptionListGroup>
-                )}
-                {server.endpoint && (
-                  <DescriptionListGroup>
-                    <DescriptionListTerm>Remote Endpoint</DescriptionListTerm>
-                    <DescriptionListDescription>{server.endpoint}</DescriptionListDescription>
-                  </DescriptionListGroup>
-                )}
-                <DescriptionListGroup>
-                  <DescriptionListTerm>Supported Transports</DescriptionListTerm>
-                  <DescriptionListDescription>
-                    {server.supportedTransports || server.transportType || 'N/A'}
-                  </DescriptionListDescription>
-                </DescriptionListGroup>
-                <DescriptionListGroup>
-                  <DescriptionListTerm>License</DescriptionListTerm>
-                  <DescriptionListDescription>
-                    {server.license || 'Not specified'}
-                  </DescriptionListDescription>
-                </DescriptionListGroup>
-                <DescriptionListGroup>
-                  <DescriptionListTerm>Tools</DescriptionListTerm>
-                  <DescriptionListDescription>{server.toolCount ?? 0}</DescriptionListDescription>
-                </DescriptionListGroup>
-                <DescriptionListGroup>
-                  <DescriptionListTerm>Resources</DescriptionListTerm>
-                  <DescriptionListDescription>
-                    {server.resourceCount ?? 0}
-                  </DescriptionListDescription>
-                </DescriptionListGroup>
-                <DescriptionListGroup>
-                  <DescriptionListTerm>Prompts</DescriptionListTerm>
-                  <DescriptionListDescription>
-                    {server.promptCount ?? 0}
-                  </DescriptionListDescription>
-                </DescriptionListGroup>
-                {server.category && (
-                  <DescriptionListGroup>
-                    <DescriptionListTerm>Category</DescriptionListTerm>
-                    <DescriptionListDescription>{server.category}</DescriptionListDescription>
-                  </DescriptionListGroup>
-                )}
-              </DescriptionList>
-            </PageSection>
-          </Tab>
-        </Tabs>
+        <Grid hasGutter>
+          <GridItem span={8}>
+            {/* Description */}
+            {server.description && (
+              <Card className="pf-v6-u-mb-lg">
+                <CardTitle>Description</CardTitle>
+                <CardBody>{server.description}</CardBody>
+              </Card>
+            )}
+
+            {/* Tools */}
+            {toolCount > 0 && (
+              <Card className="pf-v6-u-mb-lg">
+                <CardTitle>Tools ({toolCount})</CardTitle>
+                <CardBody>
+                  <SearchInput
+                    placeholder="Filter tools by name or description..."
+                    value={toolSearchTerm}
+                    onChange={(_event, value) => setToolSearchTerm(value)}
+                    onClear={() => setToolSearchTerm('')}
+                    className="pf-v6-u-mb-md"
+                  />
+                  {pagedTools.length > 0 ? (
+                    pagedTools.map((tool) => <McpToolCard key={tool.name} tool={tool} />)
+                  ) : (
+                    <p className="pf-v6-u-color-200">
+                      No tools match the filter &quot;{toolSearchTerm}&quot;
+                    </p>
+                  )}
+                  {filteredTools.length > TOOLS_PER_PAGE && (
+                    <Pagination
+                      itemCount={filteredTools.length}
+                      perPage={TOOLS_PER_PAGE}
+                      page={toolPage}
+                      onSetPage={(_event, page) => setToolPage(page)}
+                      isCompact
+                      className="pf-v6-u-mt-md"
+                    />
+                  )}
+                </CardBody>
+              </Card>
+            )}
+
+            {/* README */}
+            {server.readme && (
+              <Card className="pf-v6-u-mb-lg">
+                <CardTitle>README</CardTitle>
+                <CardBody>
+                  <McpReadme content={server.readme} />
+                </CardBody>
+              </Card>
+            )}
+          </GridItem>
+
+          <GridItem span={4}>
+            <McpServerDetailsSidebar server={server} />
+          </GridItem>
+        </Grid>
       </PageSection>
     </>
   );

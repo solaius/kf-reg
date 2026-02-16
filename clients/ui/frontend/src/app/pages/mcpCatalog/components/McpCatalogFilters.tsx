@@ -2,114 +2,146 @@ import React from 'react';
 import {
   Button,
   Checkbox,
-  Form,
-  FormGroup,
-  FormSection,
-  Title,
+  Content,
+  ContentVariants,
+  Divider,
+  SearchInput,
 } from '@patternfly/react-core';
 import { McpCatalogContext } from '~/app/context/mcpCatalog/McpCatalogContext';
 import { McpCatalogFilterKey } from '~/app/mcpCatalogTypes';
 
+const MAX_VISIBLE_FILTERS = 5;
+
+type McpFilterSectionProps = {
+  title: string;
+  filterKey: McpCatalogFilterKey;
+  values: string[];
+  selectedValues: string[];
+  onFilterChange: (key: McpCatalogFilterKey, value: string, checked: boolean) => void;
+};
+
+const McpFilterSection: React.FC<McpFilterSectionProps> = ({
+  title,
+  filterKey,
+  values,
+  selectedValues,
+  onFilterChange,
+}) => {
+  const [showMore, setShowMore] = React.useState(false);
+  const [searchValue, setSearchValue] = React.useState('');
+
+  const filteredValues = React.useMemo(
+    () =>
+      values.filter(
+        (v) =>
+          v.toLowerCase().includes(searchValue.trim().toLowerCase()) ||
+          selectedValues.includes(v),
+      ),
+    [values, searchValue, selectedValues],
+  );
+
+  const visibleValues = showMore ? filteredValues : filteredValues.slice(0, MAX_VISIBLE_FILTERS);
+
+  return (
+    <Content data-testid={`${title}-filter`}>
+      <Content component={ContentVariants.h6}>{title}</Content>
+      {values.length > MAX_VISIBLE_FILTERS && (
+        <SearchInput
+          placeholder={`Search ${title.toLowerCase()}`}
+          data-testid={`${title}-filter-search`}
+          className="pf-v6-u-mb-sm"
+          value={searchValue}
+          onChange={(_event, newValue) => setSearchValue(newValue)}
+        />
+      )}
+      {visibleValues.length === 0 && (
+        <div data-testid={`${title}-filter-empty`}>No results found</div>
+      )}
+      {visibleValues.map((value) => (
+        <Checkbox
+          key={value}
+          id={`filter-${filterKey}-${value}`}
+          label={value}
+          isChecked={selectedValues.includes(value)}
+          onChange={(_, checked) => onFilterChange(filterKey, value, checked)}
+          data-testid={`${title}-${value}-checkbox`}
+        />
+      ))}
+      {!showMore && filteredValues.length > MAX_VISIBLE_FILTERS && (
+        <Button
+          variant="link"
+          onClick={() => setShowMore(true)}
+          data-testid={`${title}-filter-show-more`}
+        >
+          Show more
+        </Button>
+      )}
+      {showMore && filteredValues.length > MAX_VISIBLE_FILTERS && (
+        <Button
+          variant="link"
+          onClick={() => setShowMore(false)}
+          data-testid={`${title}-filter-show-less`}
+        >
+          Show less
+        </Button>
+      )}
+    </Content>
+  );
+};
+
 const McpCatalogFilters: React.FC = () => {
-  const { filterData, setFilterData } = React.useContext(McpCatalogContext);
+  const { filterData, setFilterData, clearAllFilters, availableFilterValues } =
+    React.useContext(McpCatalogContext);
 
   const handleFilterChange = (key: McpCatalogFilterKey, value: string, checked: boolean) => {
     const current = filterData[key];
-    if (checked) {
-      setFilterData(key, [...current, value]);
-    } else {
-      setFilterData(key, current.filter((v) => v !== value));
-    }
+    setFilterData(key, checked ? [...current, value] : current.filter((v) => v !== value));
   };
 
-  const clearAllFilters = () => {
-    setFilterData(McpCatalogFilterKey.DEPLOYMENT_MODE, []);
-    setFilterData(McpCatalogFilterKey.CATEGORY, []);
-    setFilterData(McpCatalogFilterKey.LICENSE, []);
-    setFilterData(McpCatalogFilterKey.TRANSPORT, []);
-  };
-
-  const hasFilters =
-    filterData[McpCatalogFilterKey.DEPLOYMENT_MODE].length > 0 ||
-    filterData[McpCatalogFilterKey.CATEGORY].length > 0 ||
-    filterData[McpCatalogFilterKey.LICENSE].length > 0 ||
-    filterData[McpCatalogFilterKey.TRANSPORT].length > 0;
+  const hasFilters = Object.values(filterData).some((arr) => arr.length > 0);
 
   return (
-    <Form>
-      <Title headingLevel="h3" size="md" className="pf-v6-u-mb-md">
+    <div>
+      <Content component={ContentVariants.h5} className="pf-v6-u-mb-md">
         Filters
         {hasFilters && (
           <Button variant="link" onClick={clearAllFilters} className="pf-v6-u-ml-md">
             Clear all
           </Button>
         )}
-      </Title>
-
-      <FormSection title="Deployment Mode">
-        <FormGroup>
-          {['local', 'remote'].map((mode) => (
-            <Checkbox
-              key={mode}
-              id={`filter-deployment-${mode}`}
-              label={mode.charAt(0).toUpperCase() + mode.slice(1)}
-              isChecked={filterData[McpCatalogFilterKey.DEPLOYMENT_MODE].includes(mode)}
-              onChange={(_event, checked) =>
-                handleFilterChange(McpCatalogFilterKey.DEPLOYMENT_MODE, mode, checked)
-              }
-            />
-          ))}
-        </FormGroup>
-      </FormSection>
-
-      <FormSection title="Category">
-        <FormGroup>
-          {['Red Hat', 'DevOps', 'Database', 'Communication'].map((cat) => (
-            <Checkbox
-              key={cat}
-              id={`filter-category-${cat}`}
-              label={cat}
-              isChecked={filterData[McpCatalogFilterKey.CATEGORY].includes(cat)}
-              onChange={(_event, checked) =>
-                handleFilterChange(McpCatalogFilterKey.CATEGORY, cat, checked)
-              }
-            />
-          ))}
-        </FormGroup>
-      </FormSection>
-
-      <FormSection title="License">
-        <FormGroup>
-          {['Apache-2.0', 'MIT', 'PostgreSQL'].map((lic) => (
-            <Checkbox
-              key={lic}
-              id={`filter-license-${lic}`}
-              label={lic}
-              isChecked={filterData[McpCatalogFilterKey.LICENSE].includes(lic)}
-              onChange={(_event, checked) =>
-                handleFilterChange(McpCatalogFilterKey.LICENSE, lic, checked)
-              }
-            />
-          ))}
-        </FormGroup>
-      </FormSection>
-
-      <FormSection title="Transport">
-        <FormGroup>
-          {['stdio', 'http', 'sse'].map((transport) => (
-            <Checkbox
-              key={transport}
-              id={`filter-transport-${transport}`}
-              label={transport.toUpperCase()}
-              isChecked={filterData[McpCatalogFilterKey.TRANSPORT].includes(transport)}
-              onChange={(_event, checked) =>
-                handleFilterChange(McpCatalogFilterKey.TRANSPORT, transport, checked)
-              }
-            />
-          ))}
-        </FormGroup>
-      </FormSection>
-    </Form>
+      </Content>
+      <McpFilterSection
+        title="Deployment Mode"
+        filterKey={McpCatalogFilterKey.DEPLOYMENT_MODE}
+        values={availableFilterValues.deploymentModes}
+        selectedValues={filterData[McpCatalogFilterKey.DEPLOYMENT_MODE]}
+        onFilterChange={handleFilterChange}
+      />
+      <Divider className="pf-v6-u-my-md" />
+      <McpFilterSection
+        title="Category"
+        filterKey={McpCatalogFilterKey.CATEGORY}
+        values={availableFilterValues.categories}
+        selectedValues={filterData[McpCatalogFilterKey.CATEGORY]}
+        onFilterChange={handleFilterChange}
+      />
+      <Divider className="pf-v6-u-my-md" />
+      <McpFilterSection
+        title="License"
+        filterKey={McpCatalogFilterKey.LICENSE}
+        values={availableFilterValues.licenses}
+        selectedValues={filterData[McpCatalogFilterKey.LICENSE]}
+        onFilterChange={handleFilterChange}
+      />
+      <Divider className="pf-v6-u-my-md" />
+      <McpFilterSection
+        title="Transport"
+        filterKey={McpCatalogFilterKey.TRANSPORT}
+        values={availableFilterValues.transports}
+        selectedValues={filterData[McpCatalogFilterKey.TRANSPORT]}
+        onFilterChange={handleFilterChange}
+      />
+    </div>
   );
 };
 

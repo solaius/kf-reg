@@ -1,16 +1,22 @@
 package models
 
+// SourceStatus represents the nested status of a source.
+type SourceStatus struct {
+	State       string `json:"state"`
+	EntityCount int    `json:"entityCount"`
+	LastRefresh string `json:"lastRefreshTime,omitempty"`
+	Error       string `json:"error,omitempty"`
+}
+
 // SourceInfo represents a source within a plugin catalog.
 type SourceInfo struct {
-	Id          string                 `json:"id"`
-	Name        string                 `json:"name"`
-	Type        string                 `json:"type"`
-	Enabled     bool                   `json:"enabled"`
-	Status      string                 `json:"status,omitempty"`
-	LastRefresh string                 `json:"lastRefresh,omitempty"`
-	ItemCount   int                    `json:"itemCount,omitempty"`
-	Error       string                 `json:"error,omitempty"`
-	Config      map[string]interface{} `json:"config,omitempty"`
+	Id         string                 `json:"id"`
+	Name       string                 `json:"name"`
+	Type       string                 `json:"type"`
+	Enabled    bool                   `json:"enabled"`
+	Status     SourceStatus           `json:"status"`
+	Config     map[string]interface{} `json:"config,omitempty"`
+	Properties map[string]interface{} `json:"properties,omitempty"`
 }
 
 // SourceInfoList represents the response from listing sources for a plugin.
