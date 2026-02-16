@@ -21,13 +21,15 @@ func managementRouter(p CatalogPlugin, roleExtractor RoleExtractor, srv *Server)
 
 	configKey := pluginConfigKey(p)
 
+	pluginName := p.Name()
+
 	// Sources management (requires SourceManager)
 	if sm, ok := p.(SourceManager); ok {
-		r.Get("/sources", sourcesListHandler(sm))
+		r.Get("/sources", sourcesListHandler(sm, srv, pluginName))
 		r.Post("/validate-source", RequireRole(RoleOperator, roleExtractor)(http.HandlerFunc(validateHandler(sm))).ServeHTTP)
 		r.Post("/apply-source", RequireRole(RoleOperator, roleExtractor)(http.HandlerFunc(applyHandler(sm, srv, configKey, p))).ServeHTTP)
 		r.Post("/sources/{sourceId}/enable", RequireRole(RoleOperator, roleExtractor)(http.HandlerFunc(enableHandler(sm, srv, configKey))).ServeHTTP)
-		r.Delete("/sources/{sourceId}", RequireRole(RoleOperator, roleExtractor)(http.HandlerFunc(deleteSourceHandler(sm, srv, configKey))).ServeHTTP)
+		r.Delete("/sources/{sourceId}", RequireRole(RoleOperator, roleExtractor)(http.HandlerFunc(deleteSourceHandler(sm, srv, configKey, pluginName))).ServeHTTP)
 
 		// Detailed validation with multi-layer breakdown.
 		r.Post("/sources/{sourceId}:validate", RequireRole(RoleOperator, roleExtractor)(http.HandlerFunc(detailedValidateHandler(sm))).ServeHTTP)
@@ -43,9 +45,8 @@ func managementRouter(p CatalogPlugin, roleExtractor RoleExtractor, srv *Server)
 		if srv != nil {
 			rl = srv.rateLimiter
 		}
-		pluginName := p.Name()
-		r.Post("/refresh", RequireRole(RoleOperator, roleExtractor)(http.HandlerFunc(refreshAllHandler(rp, rl, pluginName))).ServeHTTP)
-		r.Post("/refresh/{sourceId}", RequireRole(RoleOperator, roleExtractor)(http.HandlerFunc(refreshSourceHandler(rp, rl, pluginName))).ServeHTTP)
+		r.Post("/refresh", RequireRole(RoleOperator, roleExtractor)(http.HandlerFunc(refreshAllHandler(rp, rl, pluginName, srv))).ServeHTTP)
+		r.Post("/refresh/{sourceId}", RequireRole(RoleOperator, roleExtractor)(http.HandlerFunc(refreshSourceHandler(rp, rl, pluginName, srv))).ServeHTTP)
 	}
 
 	// Diagnostics (read-only, available to viewers)
@@ -57,13 +58,49 @@ func managementRouter(p CatalogPlugin, roleExtractor RoleExtractor, srv *Server)
 }
 
 // sourcesListHandler returns a handler that lists all sources for a plugin.
-func sourcesListHandler(sm SourceManager) http.HandlerFunc {
+// Sensitive property values are redacted before returning.
+// If a Server with a DB is available, persisted refresh status is merged into
+// the returned SourceInfo objects.
+func sourcesListHandler(sm SourceManager, srv *Server, pluginName string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sources, err := sm.ListSources(r.Context())
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to list sources", err)
 			return
 		}
+
+		// Build a lookup of persisted refresh statuses.
+		var statusMap map[string]*RefreshStatusRecord
+		if srv != nil {
+			records := srv.listRefreshStatuses(pluginName)
+			if len(records) > 0 {
+				statusMap = make(map[string]*RefreshStatusRecord, len(records))
+				for i := range records {
+					statusMap[records[i].SourceID] = &records[i]
+				}
+			}
+		}
+
+		// Redact sensitive values and enrich with persisted refresh status.
+		for i := range sources {
+			sources[i].Properties = RedactSensitiveProperties(sources[i].Properties)
+
+			if rec, ok := statusMap[sources[i].ID]; ok {
+				if sources[i].Status.LastRefreshTime == nil {
+					sources[i].Status.LastRefreshTime = rec.LastRefreshTime
+				}
+				if sources[i].Status.LastRefreshStatus == "" {
+					sources[i].Status.LastRefreshStatus = rec.LastRefreshStatus
+				}
+				if sources[i].Status.LastRefreshSummary == "" {
+					sources[i].Status.LastRefreshSummary = rec.LastRefreshSummary
+				}
+				if sources[i].Status.Error == "" && rec.LastError != "" {
+					sources[i].Status.Error = rec.LastError
+				}
+			}
+		}
+
 		writeJSON(w, http.StatusOK, map[string]any{
 			"sources": sources,
 			"count":   len(sources),
@@ -111,12 +148,23 @@ func applyHandler(sm SourceManager, srv *Server, configKey string, p CatalogPlug
 			return
 		}
 
-		if err := sm.ApplySource(r.Context(), input); err != nil {
+		// Resolve SecretRef values before passing to the plugin.
+		resolvedInput := input
+		if srv != nil && srv.GetSecretResolver() != nil && input.Properties != nil {
+			resolved, err := ResolveSecretRefs(r.Context(), input.Properties, srv.GetSecretResolver())
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to resolve secret references", err)
+				return
+			}
+			resolvedInput.Properties = resolved
+		}
+
+		if err := sm.ApplySource(r.Context(), resolvedInput); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to apply source", err)
 			return
 		}
 
-		// Persist to ConfigStore if available.
+		// Persist the original input (with SecretRefs intact) to ConfigStore.
 		if srv != nil && srv.GetConfigStore() != nil {
 			src := sourceConfigFromInput(input)
 			srv.updateConfigSource(configKey, src)
@@ -154,6 +202,10 @@ func applyHandler(sm SourceManager, srv *Server, configKey string, p CatalogPlug
 							Duration: elapsed,
 						}
 					}
+				}
+				// Persist refresh status after apply.
+				if srv != nil && result.RefreshResult != nil {
+					srv.saveRefreshStatus(p.Name(), input.ID, result.RefreshResult)
 				}
 			}
 		}
@@ -205,8 +257,9 @@ func enableHandler(sm SourceManager, srv *Server, configKey string) http.Handler
 }
 
 // deleteSourceHandler returns a handler that removes a source.
-// After the in-memory mutation succeeds, it persists the change to the ConfigStore.
-func deleteSourceHandler(sm SourceManager, srv *Server, configKey string) http.HandlerFunc {
+// After the in-memory mutation succeeds, it persists the change to the ConfigStore
+// and cleans up the corresponding refresh status record.
+func deleteSourceHandler(sm SourceManager, srv *Server, configKey string, pluginName string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sourceID := chi.URLParam(r, "sourceId")
 		if sourceID == "" {
@@ -217,6 +270,11 @@ func deleteSourceHandler(sm SourceManager, srv *Server, configKey string) http.H
 		if err := sm.DeleteSource(r.Context(), sourceID); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to delete source", err)
 			return
+		}
+
+		// Clean up refresh status record for the deleted source.
+		if srv != nil {
+			srv.deleteRefreshStatus(pluginName, sourceID)
 		}
 
 		// Persist to ConfigStore if available.
@@ -237,8 +295,9 @@ func deleteSourceHandler(sm SourceManager, srv *Server, configKey string) http.H
 
 // refreshAllHandler returns a handler that triggers a refresh of all sources.
 // It checks the rate limiter before proceeding. If rate limited, it returns
-// 429 with a Retry-After header.
-func refreshAllHandler(rp RefreshProvider, rl *RefreshRateLimiter, pluginName string) http.HandlerFunc {
+// 429 with a Retry-After header. After a successful call, the refresh result
+// is persisted to the database via the Server.
+func refreshAllHandler(rp RefreshProvider, rl *RefreshRateLimiter, pluginName string, srv *Server) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if rl != nil {
 			allowed, retryAfter := rl.Allow(RefreshAllKey(pluginName))
@@ -253,14 +312,21 @@ func refreshAllHandler(rp RefreshProvider, rl *RefreshRateLimiter, pluginName st
 			writeError(w, http.StatusInternalServerError, "refresh failed", err)
 			return
 		}
+
+		// Persist refresh status for "all" sources using a synthetic key.
+		if srv != nil && result != nil {
+			srv.saveRefreshStatus(pluginName, "_all", result)
+		}
+
 		writeJSON(w, http.StatusOK, result)
 	}
 }
 
 // refreshSourceHandler returns a handler that triggers a refresh of a single source.
 // It checks the rate limiter before proceeding. If rate limited, it returns
-// 429 with a Retry-After header.
-func refreshSourceHandler(rp RefreshProvider, rl *RefreshRateLimiter, pluginName string) http.HandlerFunc {
+// 429 with a Retry-After header. After a successful call, the refresh result
+// is persisted to the database via the Server.
+func refreshSourceHandler(rp RefreshProvider, rl *RefreshRateLimiter, pluginName string, srv *Server) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sourceID := chi.URLParam(r, "sourceId")
 		if sourceID == "" {
@@ -281,6 +347,12 @@ func refreshSourceHandler(rp RefreshProvider, rl *RefreshRateLimiter, pluginName
 			writeError(w, http.StatusInternalServerError, "refresh failed", err)
 			return
 		}
+
+		// Persist refresh status.
+		if srv != nil && result != nil {
+			srv.saveRefreshStatus(pluginName, sourceID, result)
+		}
+
 		writeJSON(w, http.StatusOK, result)
 	}
 }

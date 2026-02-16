@@ -470,10 +470,16 @@ func (m *ModelCatalogClientMock) GetPluginDiagnostics(client httpclient.HTTPClie
 func (m *ModelCatalogClientMock) ValidatePluginSource(client httpclient.HTTPClientInterface, basePath string, sourceId string, payload models.SourceConfigPayload) (*models.DetailedValidationResult, error) {
 	return &models.DetailedValidationResult{
 		Valid: true,
+		Warnings: []models.ValidationError{
+			{Field: "properties.password", Message: "Property key 'password' may contain sensitive data - consider using a SecretRef instead"},
+		},
 		LayerResults: []models.LayerValidationResult{
 			{Layer: "yaml_parse", Valid: true},
 			{Layer: "strict_fields", Valid: true},
 			{Layer: "semantic", Valid: true},
+			{Layer: "security_warnings", Valid: true, Errors: []models.ValidationError{
+				{Field: "properties.password", Message: "Property key 'password' may contain sensitive data - consider using a SecretRef instead"},
+			}},
 		},
 	}, nil
 }

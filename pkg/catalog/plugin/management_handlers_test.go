@@ -13,6 +13,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 // mgmtTestPlugin is a mock plugin implementing management interfaces and CatalogPlugin.
@@ -87,7 +90,7 @@ func TestSourcesListHandler(t *testing.T) {
 		},
 	}
 
-	handler := sourcesListHandler(p)
+	handler := sourcesListHandler(p, nil, "test")
 	req := httptest.NewRequest("GET", "/sources", nil)
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
@@ -139,7 +142,7 @@ func TestValidateHandler(t *testing.T) {
 
 func TestRefreshAllHandler(t *testing.T) {
 	p := &mgmtTestPlugin{}
-	handler := refreshAllHandler(p, nil, "test")
+	handler := refreshAllHandler(p, nil, "test", nil)
 
 	req := httptest.NewRequest("POST", "/refresh", nil)
 	rr := httptest.NewRecorder()
@@ -157,7 +160,7 @@ func TestRefreshSourceHandler(t *testing.T) {
 	p := &mgmtTestPlugin{}
 
 	r := chi.NewRouter()
-	r.Post("/refresh/{sourceId}", refreshSourceHandler(p, nil, "test"))
+	r.Post("/refresh/{sourceId}", refreshSourceHandler(p, nil, "test", nil))
 
 	req := httptest.NewRequest("POST", "/refresh/src1", nil)
 	rr := httptest.NewRecorder()
@@ -214,7 +217,7 @@ func TestDeleteSourceHandler(t *testing.T) {
 	p := &mgmtTestPlugin{}
 
 	r := chi.NewRouter()
-	r.Delete("/sources/{sourceId}", deleteSourceHandler(p, nil, "test"))
+	r.Delete("/sources/{sourceId}", deleteSourceHandler(p, nil, "test", "test"))
 
 	req := httptest.NewRequest("DELETE", "/sources/src1", nil)
 	rr := httptest.NewRecorder()
@@ -630,7 +633,7 @@ func TestRefreshRateLimitedHandler(t *testing.T) {
 	p := &mgmtTestPlugin{}
 	rl := NewRefreshRateLimiter(1 * time.Hour) // very long window
 
-	handler := refreshAllHandler(p, rl, "test")
+	handler := refreshAllHandler(p, rl, "test", nil)
 
 	// First call should succeed.
 	req1 := httptest.NewRequest("POST", "/refresh", nil)
@@ -682,3 +685,161 @@ func (m *mockConfigStore) Rollback(_ context.Context, _ string) (*CatalogSources
 }
 
 var _ ConfigStore = (*mockConfigStore)(nil)
+
+// --- SecretRef resolution handler-level integration test ---
+
+// secretRefCapturingPlugin is a mock plugin that captures the SourceConfigInput
+// it receives in ApplySource, allowing tests to inspect the resolved properties.
+type secretRefCapturingPlugin struct {
+	testMgmtPlugin
+	appliedInput *SourceConfigInput
+}
+
+func (p *secretRefCapturingPlugin) ApplySource(_ context.Context, input SourceConfigInput) error {
+	p.appliedInput = &input
+	return nil
+}
+
+// TestApplyHandler_ResolvesSecretRefs verifies the full handler-level flow:
+// 1. A Server is created with a K8sSecretResolver backed by a fake K8s Secret
+// 2. An apply-source request is sent with SecretRef properties
+// 3. The mock plugin receives resolved (plain string) values
+// 4. The persisted config retains the original SecretRef objects
+func TestApplyHandler_ResolvesSecretRefs(t *testing.T) {
+	// Create a fake K8s secret.
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "hf-credentials",
+			Namespace: "kubeflow",
+		},
+		Data: map[string][]byte{
+			"hf-token": []byte("hf_live_token_abc123"),
+		},
+	}
+	k8sClient := fake.NewSimpleClientset(secret)
+	resolver := NewK8sSecretResolver(k8sClient, "kubeflow")
+
+	// Create a mock config store that captures the saved config.
+	store := &secretRefMockConfigStore{}
+
+	// Create a Server with the SecretResolver and ConfigStore.
+	cfg := &CatalogSourcesConfig{Catalogs: map[string]CatalogSection{}}
+	srv := NewServer(cfg, nil, nil, nil, WithSecretResolver(resolver), WithConfigStore(store))
+
+	// Create a capturing plugin.
+	p := &secretRefCapturingPlugin{}
+	configKey := pluginConfigKey(&p.testMgmtPlugin)
+
+	handler := applyHandler(p, srv, configKey, p)
+
+	// Build the request body with a SecretRef and a plain property.
+	input := SourceConfigInput{
+		ID:   "hf-source",
+		Name: "HuggingFace Source",
+		Type: "huggingface",
+		Properties: map[string]any{
+			"url": "https://huggingface.co",
+			"token": map[string]any{
+				"name": "hf-credentials",
+				"key":  "hf-token",
+			},
+		},
+	}
+	bodyBytes, err := json.Marshal(input)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest("POST", "/apply-source", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code, "apply should succeed; body: %s", rr.Body.String())
+
+	var result map[string]any
+	err = json.Unmarshal(rr.Body.Bytes(), &result)
+	require.NoError(t, err)
+	assert.Equal(t, "applied", result["status"])
+
+	// Verify the plugin received RESOLVED values (plain strings, not SecretRef maps).
+	require.NotNil(t, p.appliedInput, "plugin ApplySource should have been called")
+	assert.Equal(t, "hf_live_token_abc123", p.appliedInput.Properties["token"],
+		"plugin should receive the resolved secret value")
+	assert.Equal(t, "https://huggingface.co", p.appliedInput.Properties["url"],
+		"plain properties should pass through unchanged")
+
+	// Verify the config store received the ORIGINAL input (SecretRef intact).
+	require.NotNil(t, store.lastSavedConfig, "config should have been persisted")
+	section, ok := store.lastSavedConfig.Catalogs[configKey]
+	require.True(t, ok, "persisted config should contain the plugin section")
+	require.Len(t, section.Sources, 1, "should have exactly one source")
+
+	persistedProps := section.Sources[0].Properties
+	tokenProp, isMap := persistedProps["token"].(map[string]any)
+	require.True(t, isMap, "persisted token should still be a SecretRef map, got %T", persistedProps["token"])
+	assert.Equal(t, "hf-credentials", tokenProp["name"])
+	assert.Equal(t, "hf-token", tokenProp["key"])
+}
+
+// TestApplyHandler_SecretRefResolutionFailure verifies that the handler returns
+// an error when a SecretRef cannot be resolved (e.g., missing secret).
+func TestApplyHandler_SecretRefResolutionFailure(t *testing.T) {
+	// Create resolver with NO secrets -> resolution will fail.
+	k8sClient := fake.NewSimpleClientset()
+	resolver := NewK8sSecretResolver(k8sClient, "default")
+
+	cfg := &CatalogSourcesConfig{Catalogs: map[string]CatalogSection{}}
+	srv := NewServer(cfg, nil, nil, nil, WithSecretResolver(resolver))
+
+	p := &secretRefCapturingPlugin{}
+	handler := applyHandler(p, srv, "test", p)
+
+	input := SourceConfigInput{
+		ID:   "test-src",
+		Name: "Test",
+		Type: "yaml",
+		Properties: map[string]any{
+			"token": map[string]any{
+				"name": "nonexistent-secret",
+				"key":  "token",
+			},
+		},
+	}
+	bodyBytes, _ := json.Marshal(input)
+
+	req := httptest.NewRequest("POST", "/apply-source", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusInternalServerError, rr.Code)
+	assert.Contains(t, rr.Body.String(), "failed to resolve secret")
+	assert.Nil(t, p.appliedInput, "plugin ApplySource should NOT have been called on resolution failure")
+}
+
+// secretRefMockConfigStore captures the last saved config for assertions.
+type secretRefMockConfigStore struct {
+	lastSavedConfig *CatalogSourcesConfig
+}
+
+func (m *secretRefMockConfigStore) Load(_ context.Context) (*CatalogSourcesConfig, string, error) {
+	return &CatalogSourcesConfig{Catalogs: map[string]CatalogSection{}}, "v1", nil
+}
+
+func (m *secretRefMockConfigStore) Save(_ context.Context, cfg *CatalogSourcesConfig, _ string) (string, error) {
+	m.lastSavedConfig = cfg
+	return "v2", nil
+}
+
+func (m *secretRefMockConfigStore) Watch(_ context.Context) (<-chan ConfigChangeEvent, error) {
+	return nil, nil
+}
+
+func (m *secretRefMockConfigStore) ListRevisions(_ context.Context) ([]ConfigRevision, error) {
+	return []ConfigRevision{}, nil
+}
+
+func (m *secretRefMockConfigStore) Rollback(_ context.Context, _ string) (*CatalogSourcesConfig, string, error) {
+	return nil, "", ErrRevisionNotFound
+}
+
+var _ ConfigStore = (*secretRefMockConfigStore)(nil)

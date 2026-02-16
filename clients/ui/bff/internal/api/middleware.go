@@ -140,6 +140,11 @@ func (app *App) AttachModelCatalogRESTClient(next func(http.ResponseWriter, *htt
 		// Prepare headers for the REST client
 		headers := http.Header{}
 
+		// The BFF is a trusted backend component; always request operator-level
+		// access from the catalog-server so management endpoints (validate,
+		// apply, rollback, refresh, etc.) are not blocked by RBAC.
+		headers.Set("X-User-Role", "operator")
+
 		// If using user token authentication, extract and forward the authorization header
 		if app.config.AuthMethod == config.AuthMethodUser {
 			identity, ok := r.Context().Value(constants.RequestIdentityKey).(*kubernetes.RequestIdentity)

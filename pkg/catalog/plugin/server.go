@@ -34,6 +34,7 @@ type Server struct {
 	configStore     ConfigStore
 	configVersion   string // hash from last ConfigStore.Load
 	rateLimiter     *RefreshRateLimiter
+	secretResolver  SecretResolver
 	startedAt       time.Time
 	initialLoadDone bool
 	mu              sync.RWMutex
@@ -55,6 +56,15 @@ func WithRoleExtractor(extractor RoleExtractor) ServerOption {
 func WithConfigStore(store ConfigStore) ServerOption {
 	return func(s *Server) {
 		s.configStore = store
+	}
+}
+
+// WithSecretResolver sets a SecretResolver for resolving SecretRef values
+// in source properties. When set, management handlers resolve SecretRef
+// objects before passing properties to plugin operations.
+func WithSecretResolver(resolver SecretResolver) ServerOption {
+	return func(s *Server) {
+		s.secretResolver = resolver
 	}
 }
 
@@ -99,6 +109,13 @@ func (s *Server) Init(ctx context.Context) error {
 			s.config = cfg
 			s.configVersion = version
 			s.logger.Info("loaded config from store", "version", version)
+		}
+	}
+
+	// Auto-migrate the refresh status table.
+	if s.db != nil {
+		if err := s.db.AutoMigrate(&RefreshStatusRecord{}); err != nil {
+			s.logger.Error("failed to auto-migrate refresh status table", "error", err)
 		}
 	}
 
@@ -384,6 +401,11 @@ func (s *Server) GetConfigStore() ConfigStore {
 	return s.configStore
 }
 
+// GetSecretResolver returns the server's SecretResolver, or nil if not set.
+func (s *Server) GetSecretResolver() SecretResolver {
+	return s.secretResolver
+}
+
 // persistConfig saves the current in-memory config to the ConfigStore using
 // optimistic concurrency. It updates the in-memory configVersion on success.
 // Returns the new version on success, or an error (including ErrVersionConflict).
@@ -438,6 +460,15 @@ func (s *Server) enableConfigSource(configKey, sourceID string, enabled bool) {
 		}
 	}
 	s.config.Catalogs[configKey] = section
+}
+
+// CleanupPluginData removes all persisted data associated with a plugin.
+// This should be called when a plugin is unregistered or permanently removed.
+// Currently it deletes all refresh status records for the plugin. Future
+// cleanup steps (e.g., removing config sections) can be added here.
+func (s *Server) CleanupPluginData(pluginName string) {
+	s.deleteAllRefreshStatuses(pluginName)
+	s.logger.Info("cleaned up plugin data", "plugin", pluginName)
 }
 
 // deleteConfigSource removes a source from the in-memory config.

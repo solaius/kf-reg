@@ -224,6 +224,14 @@ type FieldHint struct {
 	Section string `json:"section,omitempty"`
 }
 
+// SecretRef references a value stored in a Kubernetes Secret.
+// Used instead of inlining sensitive values in source configuration.
+type SecretRef struct {
+	Name      string `json:"name" yaml:"name"`
+	Namespace string `json:"namespace,omitempty" yaml:"namespace,omitempty"`
+	Key       string `json:"key" yaml:"key"`
+}
+
 // CLIHints provides display hints for CLI table rendering.
 type CLIHints struct {
 	// DefaultColumns lists the field names to show by default.

@@ -1,11 +1,14 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
+
+	"gopkg.in/yaml.v3"
 
 	pkgcatalog "github.com/kubeflow/model-registry/pkg/catalog"
 	"github.com/kubeflow/model-registry/pkg/catalog/plugin"
@@ -79,6 +82,36 @@ func (p *McpServerCatalogPlugin) ListSources(ctx context.Context) ([]plugin.Sour
 	return result, nil
 }
 
+// mcpServerStrictEntry defines all known fields for an MCP server entry.
+// Used with yaml.Decoder.KnownFields(true) to detect unknown fields in
+// properties.content during validation.
+type mcpServerStrictEntry struct {
+	Name                string         `yaml:"name"`
+	ExternalId          string         `yaml:"externalId"`
+	Description         *string        `yaml:"description"`
+	ServerUrl           string         `yaml:"serverUrl"`
+	TransportType       *string        `yaml:"transportType"`
+	ToolCount           *int32         `yaml:"toolCount"`
+	ResourceCount       *int32         `yaml:"resourceCount"`
+	PromptCount         *int32         `yaml:"promptCount"`
+	DeploymentMode      *string        `yaml:"deploymentMode"`
+	Image               *string        `yaml:"image"`
+	Endpoint            *string        `yaml:"endpoint"`
+	SupportedTransports *string        `yaml:"supportedTransports"`
+	License             *string        `yaml:"license"`
+	Verified            *bool          `yaml:"verified"`
+	Certified           *bool          `yaml:"certified"`
+	Provider            *string        `yaml:"provider"`
+	Logo                *string        `yaml:"logo"`
+	Category            *string        `yaml:"category"`
+	CustomProperties    map[string]any `yaml:"customProperties"`
+}
+
+// mcpServerStrictCatalog is the top-level wrapper for strict YAML decoding.
+type mcpServerStrictCatalog struct {
+	McpServers []mcpServerStrictEntry `yaml:"mcpservers"`
+}
+
 // ValidateSource validates a source configuration without applying it.
 func (p *McpServerCatalogPlugin) ValidateSource(ctx context.Context, src plugin.SourceConfigInput) (*plugin.ValidationResult, error) {
 	result := &plugin.ValidationResult{Valid: true}
@@ -117,7 +150,44 @@ func (p *McpServerCatalogPlugin) ValidateSource(ctx context.Context, src plugin.
 		}
 	}
 
+	// Strict-decode properties.content to detect unknown fields.
+	if errs := validateMcpContent(src); len(errs) > 0 {
+		result.Valid = false
+		result.Errors = append(result.Errors, errs...)
+	}
+
 	return result, nil
+}
+
+// validateMcpContent performs strict YAML decoding of properties.content
+// against the known MCP server schema. Returns validation errors for any
+// unknown fields found in the mcpservers entries.
+func validateMcpContent(src plugin.SourceConfigInput) []plugin.ValidationError {
+	if src.Properties == nil {
+		return nil
+	}
+	raw, ok := src.Properties["content"]
+	if !ok {
+		return nil
+	}
+	content, ok := raw.(string)
+	if !ok || content == "" {
+		return nil
+	}
+
+	dec := yaml.NewDecoder(bytes.NewReader([]byte(content)))
+	dec.KnownFields(true)
+
+	var catalog mcpServerStrictCatalog
+	if err := dec.Decode(&catalog); err != nil {
+		return []plugin.ValidationError{
+			{
+				Field:   "properties.content",
+				Message: fmt.Sprintf("unknown or invalid fields in content: %v", err),
+			},
+		}
+	}
+	return nil
 }
 
 // ApplySource adds or updates a source configuration.

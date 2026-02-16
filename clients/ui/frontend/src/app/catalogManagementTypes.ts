@@ -43,9 +43,9 @@ export type LayerValidationResult = {
 
 export type DetailedValidationResult = {
   valid: boolean;
-  errors: ValidationError[];
+  errors?: ValidationError[];
   warnings?: ValidationError[];
-  layerResults: LayerValidationResult[];
+  layerResults?: LayerValidationResult[];
 };
 
 export type ConfigRevision = {

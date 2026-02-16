@@ -126,6 +126,14 @@ func main() {
 		}
 		configStore := plugin.NewK8sSourceConfigStore(clientset, k8sNamespace, k8sConfigMap, k8sDataKey)
 		serverOpts = append(serverOpts, plugin.WithConfigStore(configStore))
+
+		// Wire SecretResolver so that source properties containing SecretRef
+		// objects (e.g. {"name":"my-secret","key":"token"}) are resolved from
+		// Kubernetes Secrets at runtime. The resolver defaults to k8sNamespace
+		// when a SecretRef omits its namespace field.
+		secretResolver := plugin.NewK8sSecretResolver(clientset, k8sNamespace)
+		serverOpts = append(serverOpts, plugin.WithSecretResolver(secretResolver))
+
 		logger.Info("using k8s config store",
 			"namespace", k8sNamespace, "configMap", k8sConfigMap, "dataKey", k8sDataKey)
 	case "none":

@@ -103,28 +103,34 @@ func TestStrictFieldsLayer(t *testing.T) {
 		wantErrs int
 	}{
 		{
-			name: "valid known fields",
+			name: "valid envelope fields",
 			input: SourceConfigInput{
+				ID:   "test",
+				Name: "Test",
+				Type: "yaml",
+			},
+			wantErrs: 0,
+		},
+		{
+			name: "valid with content property (content is not validated here)",
+			input: SourceConfigInput{
+				ID:   "test",
+				Name: "Test",
+				Type: "yaml",
 				Properties: map[string]any{
-					"content": "id: test\nname: Test\ntype: yaml\n",
+					"content": "mcpservers:\n- name: foo\n",
 				},
 			},
 			wantErrs: 0,
 		},
 		{
-			name: "unknown field",
+			name: "valid with non-content properties",
 			input: SourceConfigInput{
+				ID:   "test",
+				Name: "Test",
+				Type: "yaml",
 				Properties: map[string]any{
-					"content": "id: test\nname: Test\nunknownField: bad\n",
-				},
-			},
-			wantErrs: 1,
-		},
-		{
-			name: "no content field",
-			input: SourceConfigInput{
-				Properties: map[string]any{
-					"other": "value",
+					"path": "/data/servers.yaml",
 				},
 			},
 			wantErrs: 0,
@@ -132,6 +138,9 @@ func TestStrictFieldsLayer(t *testing.T) {
 		{
 			name: "nil properties",
 			input: SourceConfigInput{
+				ID:         "test",
+				Name:       "Test",
+				Type:       "yaml",
 				Properties: nil,
 			},
 			wantErrs: 0,
@@ -142,10 +151,6 @@ func TestStrictFieldsLayer(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			errs := layer.Check(ctx, tc.input)
 			assert.Len(t, errs, tc.wantErrs)
-			if tc.wantErrs > 0 {
-				assert.Equal(t, "properties.content", errs[0].Field)
-				assert.Contains(t, errs[0].Message, "unknown or invalid fields")
-			}
 		})
 	}
 }
@@ -317,6 +322,44 @@ func TestProviderLayer(t *testing.T) {
 		errs := layer.Check(ctx, SourceConfigInput{ID: "test"})
 		assert.Empty(t, errs)
 	})
+
+	t.Run("provider catches unknown fields in content", func(t *testing.T) {
+		// Simulates a plugin ValidateSource that performs strict content decoding
+		// and rejects unknown fields — the pattern implemented by the MCP plugin.
+		sm := &mgmtTestPlugin{
+			validateFn: func(input SourceConfigInput) (*ValidationResult, error) {
+				if input.Properties == nil {
+					return &ValidationResult{Valid: true}, nil
+				}
+				if _, ok := input.Properties["content"]; !ok {
+					return &ValidationResult{Valid: true}, nil
+				}
+				// The plugin detected an unknown field in the content.
+				return &ValidationResult{
+					Valid: false,
+					Errors: []ValidationError{
+						{
+							Field:   "properties.content",
+							Message: "unknown or invalid fields in content: line 4: field unknownField not found",
+						},
+					},
+				}, nil
+			},
+		}
+		layer := ProviderLayer(sm)
+
+		errs := layer.Check(ctx, SourceConfigInput{
+			ID:   "test",
+			Name: "Test",
+			Type: "yaml",
+			Properties: map[string]any{
+				"content": "mcpservers:\n- name: foo\n  unknownField: true\n",
+			},
+		})
+		require.Len(t, errs, 1)
+		assert.Equal(t, "properties.content", errs[0].Field)
+		assert.Contains(t, errs[0].Message, "unknown or invalid fields in content")
+	})
 }
 
 func TestMultiLayerValidator(t *testing.T) {
@@ -445,29 +488,31 @@ func TestNewDefaultValidator(t *testing.T) {
 	t.Run("with nil SourceManager", func(t *testing.T) {
 		v := NewDefaultValidator(nil)
 		require.NotNil(t, v)
-		// Should have 3 layers: yaml_parse, strict_fields, semantic
-		assert.Len(t, v.layers, 3)
+		// Should have 4 layers: yaml_parse, strict_fields, semantic, security_warnings
+		assert.Len(t, v.layers, 4)
 		assert.Equal(t, "yaml_parse", v.layers[0].Name)
 		assert.Equal(t, "strict_fields", v.layers[1].Name)
 		assert.Equal(t, "semantic", v.layers[2].Name)
+		assert.Equal(t, "security_warnings", v.layers[3].Name)
 	})
 
 	t.Run("with non-nil SourceManager", func(t *testing.T) {
 		sm := &mgmtTestPlugin{}
 		v := NewDefaultValidator(sm)
 		require.NotNil(t, v)
-		// Should have 4 layers: yaml_parse, strict_fields, semantic, provider
-		assert.Len(t, v.layers, 4)
+		// Should have 5 layers: yaml_parse, strict_fields, semantic, security_warnings, provider
+		assert.Len(t, v.layers, 5)
 		assert.Equal(t, "yaml_parse", v.layers[0].Name)
 		assert.Equal(t, "strict_fields", v.layers[1].Name)
 		assert.Equal(t, "semantic", v.layers[2].Name)
-		assert.Equal(t, "provider", v.layers[3].Name)
+		assert.Equal(t, "security_warnings", v.layers[3].Name)
+		assert.Equal(t, "provider", v.layers[4].Name)
 	})
 
 	t.Run("DefaultValidator alias works", func(t *testing.T) {
 		v := DefaultValidator(nil)
 		require.NotNil(t, v)
-		assert.Len(t, v.layers, 3)
+		assert.Len(t, v.layers, 4)
 	})
 
 	t.Run("full validation with valid input", func(t *testing.T) {
@@ -487,6 +532,138 @@ func TestNewDefaultValidator(t *testing.T) {
 		assert.False(t, result.Valid)
 		// Should fail at semantic layer for missing id, name, type
 		assert.GreaterOrEqual(t, len(result.Errors), 3)
+	})
+}
+
+func TestSecurityWarningsLayer(t *testing.T) {
+	layer := SecurityWarningsLayer()
+	ctx := context.Background()
+
+	assert.Equal(t, "security_warnings", layer.Name)
+	assert.True(t, layer.WarningOnly)
+	assert.False(t, layer.Critical)
+
+	t.Run("no properties produces no warnings", func(t *testing.T) {
+		errs := layer.Check(ctx, SourceConfigInput{
+			ID:   "test",
+			Name: "Test",
+			Type: "yaml",
+		})
+		assert.Empty(t, errs)
+	})
+
+	t.Run("nil properties produces no warnings", func(t *testing.T) {
+		errs := layer.Check(ctx, SourceConfigInput{
+			ID:         "test",
+			Name:       "Test",
+			Type:       "yaml",
+			Properties: nil,
+		})
+		assert.Empty(t, errs)
+	})
+
+	t.Run("non-sensitive properties produce no warnings", func(t *testing.T) {
+		errs := layer.Check(ctx, SourceConfigInput{
+			ID:   "test",
+			Name: "Test",
+			Type: "yaml",
+			Properties: map[string]any{
+				"url":  "https://example.com",
+				"path": "/data/file.yaml",
+			},
+		})
+		assert.Empty(t, errs)
+	})
+
+	t.Run("inline password produces warning", func(t *testing.T) {
+		errs := layer.Check(ctx, SourceConfigInput{
+			ID:   "test",
+			Name: "Test",
+			Type: "yaml",
+			Properties: map[string]any{
+				"url":      "https://example.com",
+				"password": "hunter2",
+			},
+		})
+		require.Len(t, errs, 1)
+		assert.Equal(t, "properties.password", errs[0].Field)
+		assert.Contains(t, errs[0].Message, "inline credential")
+		assert.Contains(t, errs[0].Message, "SecretRef")
+	})
+
+	t.Run("SecretRef map value does not produce warning", func(t *testing.T) {
+		errs := layer.Check(ctx, SourceConfigInput{
+			ID:   "test",
+			Name: "Test",
+			Type: "yaml",
+			Properties: map[string]any{
+				"url": "https://example.com",
+				"apiKeyRef": map[string]any{
+					"name": "my-secret",
+					"key":  "api-key",
+				},
+			},
+		})
+		assert.Empty(t, errs)
+	})
+
+	t.Run("multiple inline credentials produce multiple warnings", func(t *testing.T) {
+		errs := layer.Check(ctx, SourceConfigInput{
+			ID:   "test",
+			Name: "Test",
+			Type: "yaml",
+			Properties: map[string]any{
+				"password":   "pass1",
+				"token":      "tok1",
+				"credential": "cred1",
+			},
+		})
+		assert.Len(t, errs, 3)
+	})
+}
+
+func TestWarningOnlyLayer(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("warning-only layer does not affect Valid flag", func(t *testing.T) {
+		v := NewMultiLayerValidator()
+		v.AddLayer(ValidationLayer{
+			Name:        "warnings",
+			WarningOnly: true,
+			Check: func(_ context.Context, _ SourceConfigInput) []ValidationError {
+				return []ValidationError{{Field: "x", Message: "just a warning"}}
+			},
+		})
+
+		result := v.Validate(ctx, SourceConfigInput{ID: "test"})
+		assert.True(t, result.Valid, "warnings should not invalidate the result")
+		assert.Empty(t, result.Errors)
+		assert.Len(t, result.Warnings, 1)
+		assert.Equal(t, "just a warning", result.Warnings[0].Message)
+	})
+
+	t.Run("warning-only layer plus error layer", func(t *testing.T) {
+		v := NewMultiLayerValidator()
+		v.AddLayer(ValidationLayer{
+			Name:        "warnings",
+			WarningOnly: true,
+			Check: func(_ context.Context, _ SourceConfigInput) []ValidationError {
+				return []ValidationError{{Field: "w", Message: "a warning"}}
+			},
+		})
+		v.AddLayer(ValidationLayer{
+			Name: "errors",
+			Check: func(_ context.Context, _ SourceConfigInput) []ValidationError {
+				return []ValidationError{{Field: "e", Message: "an error"}}
+			},
+		})
+
+		result := v.Validate(ctx, SourceConfigInput{ID: "test"})
+		assert.False(t, result.Valid, "error layer should invalidate")
+		assert.Len(t, result.Errors, 1)
+		assert.Len(t, result.Warnings, 1)
+		assert.Equal(t, "a warning", result.Warnings[0].Message)
+		assert.Equal(t, "an error", result.Errors[0].Message)
 	})
 }
 

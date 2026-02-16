@@ -18,6 +18,10 @@ type ValidationLayer struct {
 	// Critical indicates whether a failure in this layer should stop further validation.
 	Critical bool
 
+	// WarningOnly indicates that issues from this layer are warnings, not errors.
+	// Warnings do not affect the Valid flag and are placed in the Warnings list.
+	WarningOnly bool
+
 	// Check runs the validation and returns any errors found.
 	Check func(ctx context.Context, input SourceConfigInput) []ValidationError
 }
@@ -86,12 +90,18 @@ func (v *MultiLayerValidator) Validate(ctx context.Context, input SourceConfigIn
 		result.LayerResults = append(result.LayerResults, layerResult)
 
 		if len(errs) > 0 {
-			result.Valid = false
-			result.Errors = append(result.Errors, errs...)
+			if layer.WarningOnly {
+				// Warning-only layers populate Warnings, not Errors,
+				// and do not affect the Valid flag.
+				result.Warnings = append(result.Warnings, errs...)
+			} else {
+				result.Valid = false
+				result.Errors = append(result.Errors, errs...)
 
-			// Stop validation on critical layer failure.
-			if layer.Critical {
-				break
+				// Stop validation on critical layer failure.
+				if layer.Critical {
+					break
+				}
 			}
 		}
 	}
@@ -127,25 +137,55 @@ func YAMLParseLayer() ValidationLayer {
 }
 
 // StrictFieldsLayer returns a validation layer that uses strict YAML decoding
-// to detect unknown fields in the source configuration content.
+// to detect unknown fields in the source configuration input.
+//
+// This layer validates the SourceConfigInput envelope fields (id, name, type,
+// etc.) but does NOT validate the properties.content field, because its schema
+// is plugin-specific and unknown to the generic validator.  Content validation
+// is delegated to the provider layer instead.
 func StrictFieldsLayer() ValidationLayer {
 	return ValidationLayer{
 		Name: "strict_fields",
 		Check: func(_ context.Context, input SourceConfigInput) []ValidationError {
-			content, ok := getContentString(input)
-			if !ok {
-				return nil
+			// Validate the source config envelope by re-encoding the input
+			// fields into YAML and strictly decoding into SourceConfig.
+			envelope := map[string]any{
+				"id":   input.ID,
+				"name": input.Name,
+				"type": input.Type,
+			}
+			if input.Properties != nil {
+				// Include properties but exclude "content" since its format
+				// is plugin-specific and validated by the provider layer.
+				props := make(map[string]any, len(input.Properties))
+				for k, v := range input.Properties {
+					if k != "content" {
+						props[k] = v
+					}
+				}
+				if len(props) > 0 {
+					envelope["properties"] = props
+				}
 			}
 
-			// Try strict decoding into a SourceConfig to detect unknown fields.
-			dec := yaml.NewDecoder(strings.NewReader(content))
+			raw, err := yaml.Marshal(envelope)
+			if err != nil {
+				return []ValidationError{
+					{
+						Field:   "source",
+						Message: fmt.Sprintf("failed to marshal source config: %v", err),
+					},
+				}
+			}
+
+			dec := yaml.NewDecoder(strings.NewReader(string(raw)))
 			dec.KnownFields(true)
 
 			var cfg SourceConfig
 			if err := dec.Decode(&cfg); err != nil {
 				return []ValidationError{
 					{
-						Field:   "properties.content",
+						Field:   "source",
 						Message: fmt.Sprintf("unknown or invalid fields: %v", err),
 					},
 				}
@@ -224,16 +264,51 @@ func ProviderLayer(sm SourceManager) ValidationLayer {
 	}
 }
 
+// SecurityWarningsLayer returns a validation layer that checks for sensitive
+// values inlined as plain strings in source properties. It produces warnings
+// (not errors) suggesting the use of SecretRef instead. This layer does not
+// block saving.
+func SecurityWarningsLayer() ValidationLayer {
+	return ValidationLayer{
+		Name:        "security_warnings",
+		WarningOnly: true,
+		Check: func(_ context.Context, input SourceConfigInput) []ValidationError {
+			if input.Properties == nil {
+				return nil
+			}
+			var warnings []ValidationError
+			for k, v := range input.Properties {
+				if !IsSensitiveKey(k) {
+					continue
+				}
+				// Only warn if the value is a plain string (not a SecretRef-like map).
+				if _, isMap := v.(map[string]any); isMap {
+					continue
+				}
+				if _, isStr := v.(string); isStr {
+					warnings = append(warnings, ValidationError{
+						Field:   fmt.Sprintf("properties.%s", k),
+						Message: fmt.Sprintf("property %q appears to contain an inline credential; consider using a SecretRef instead", k),
+					})
+				}
+			}
+			return warnings
+		},
+	}
+}
+
 // DefaultValidator is an alias for NewDefaultValidator.
 var DefaultValidator = NewDefaultValidator
 
 // NewDefaultValidator creates a MultiLayerValidator with the standard built-in
-// layers: YAML parse, strict fields, semantic, and optionally provider.
+// layers: YAML parse, strict fields, semantic, security warnings, and
+// optionally provider.
 func NewDefaultValidator(sm SourceManager) *MultiLayerValidator {
 	v := NewMultiLayerValidator()
 	v.AddLayer(YAMLParseLayer())
 	v.AddLayer(StrictFieldsLayer())
 	v.AddLayer(SemanticLayer())
+	v.AddLayer(SecurityWarningsLayer())
 	if sm != nil {
 		v.AddLayer(ProviderLayer(sm))
 	}

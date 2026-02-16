@@ -17,17 +17,24 @@ type ValidationResultPanelProps = {
 };
 
 const ValidationResultPanel: React.FC<ValidationResultPanelProps> = ({ result }) => {
-  const [isExpanded, setIsExpanded] = React.useState(!result.valid);
+  const hasWarnings = result.warnings != null && result.warnings.length > 0;
+  const [isExpanded, setIsExpanded] = React.useState(!result.valid || hasWarnings);
 
   return (
     <ExpandableSection
-      toggleText={result.valid ? 'Validation passed' : 'Validation failed'}
+      toggleText={
+        result.valid
+          ? hasWarnings
+            ? `Validation passed with ${result.warnings!.length} warning(s)`
+            : 'Validation passed'
+          : 'Validation failed'
+      }
       onToggle={(_event, expanded) => setIsExpanded(expanded)}
       isExpanded={isExpanded}
       data-testid="validation-result-panel"
     >
       <Stack hasGutter>
-        {result.errors.length > 0 && (
+        {result.errors && result.errors.length > 0 && (
           <StackItem>
             {result.errors.map((err, idx) => (
               <Alert
@@ -57,7 +64,7 @@ const ValidationResultPanel: React.FC<ValidationResultPanelProps> = ({ result })
           </StackItem>
         )}
 
-        {result.layerResults.length > 0 && (
+        {result.layerResults && result.layerResults.length > 0 && (
           <StackItem>
             <DescriptionList isHorizontal isCompact data-testid="layer-results">
               {result.layerResults.map((layer) => (
@@ -66,15 +73,27 @@ const ValidationResultPanel: React.FC<ValidationResultPanelProps> = ({ result })
                   <DescriptionListDescription>
                     <Stack>
                       <StackItem>
-                        <Label color={layer.valid ? 'green' : 'red'}>
-                          {layer.valid ? 'Passed' : 'Failed'}
+                        <Label
+                          color={
+                            layer.valid
+                              ? layer.errors && layer.errors.length > 0
+                                ? 'orange'
+                                : 'green'
+                              : 'red'
+                          }
+                        >
+                          {layer.valid
+                            ? layer.errors && layer.errors.length > 0
+                              ? 'Warnings'
+                              : 'Passed'
+                            : 'Failed'}
                         </Label>
                       </StackItem>
                       {layer.errors &&
                         layer.errors.map((err, idx) => (
                           <StackItem key={idx}>
                             <Alert
-                              variant="danger"
+                              variant={layer.valid ? 'warning' : 'danger'}
                               isInline
                               isPlain
                               title={err.field ? `${err.field}: ${err.message}` : err.message}

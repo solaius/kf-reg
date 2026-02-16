@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -89,6 +90,10 @@ func (s *K8sSourceConfigStore) Load(ctx context.Context) (*CatalogSourcesConfig,
 // Save marshals the configuration to YAML and updates the ConfigMap.
 // The provided version must match the current content hash; otherwise
 // ErrVersionConflict is returned. On success the new version hash is returned.
+//
+// Callers should handle ErrVersionConflict by re-loading the config and
+// re-applying their changes. For automatic retry with backoff, use
+// RetryOnConflict instead.
 func (s *K8sSourceConfigStore) Save(ctx context.Context, cfg *CatalogSourcesConfig, version string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -103,7 +108,8 @@ func (s *K8sSourceConfigStore) Save(ctx context.Context, cfg *CatalogSourcesConf
 	currentData := cm.Data[s.dataKey]
 	currentVersion := hashContent([]byte(currentData))
 	if currentVersion != version {
-		return "", ErrVersionConflict
+		return "", fmt.Errorf("k8s config store: expected version %.8s but current is %.8s: %w",
+			version, currentVersion, ErrVersionConflict)
 	}
 
 	// Marshal new config.
@@ -288,6 +294,35 @@ func (s *K8sSourceConfigStore) findRevisionDataByPrefix(cm *corev1.ConfigMap, pr
 func hashContent(data []byte) string {
 	h := sha256.Sum256(data)
 	return fmt.Sprintf("%x", h)
+}
+
+// RetryOnConflict retries a mutate-and-save operation when version conflicts occur.
+// The mutate function receives the current config and should apply changes in-place.
+// On conflict, the config is re-loaded and the mutation re-applied, up to maxRetries times.
+func (s *K8sSourceConfigStore) RetryOnConflict(ctx context.Context, mutate func(*CatalogSourcesConfig) error, maxRetries int) (string, error) {
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		cfg, version, err := s.Load(ctx)
+		if err != nil {
+			return "", fmt.Errorf("load failed: %w", err)
+		}
+		if err := mutate(cfg); err != nil {
+			return "", fmt.Errorf("mutate failed: %w", err)
+		}
+		newVersion, err := s.Save(ctx, cfg, version)
+		if err == nil {
+			return newVersion, nil
+		}
+		if !errors.Is(err, ErrVersionConflict) {
+			return "", err
+		}
+		// Backoff before retry.
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(time.Duration(50<<uint(attempt)) * time.Millisecond):
+		}
+	}
+	return "", fmt.Errorf("save failed after %d retries: %w", maxRetries+1, ErrVersionConflict)
 }
 
 // Compile-time interface check.
