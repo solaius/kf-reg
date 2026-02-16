@@ -94,6 +94,56 @@ type StatusProvider interface {
 	Status() PluginStatus
 }
 
+// SourceManager is an optional interface that plugins can implement
+// to support runtime management of data sources (add/edit/delete/enable).
+type SourceManager interface {
+	// ListSources returns information about all configured sources.
+	ListSources(ctx context.Context) ([]SourceInfo, error)
+
+	// ValidateSource validates a source configuration without applying it.
+	ValidateSource(ctx context.Context, src SourceConfigInput) (*ValidationResult, error)
+
+	// ApplySource adds or updates a source configuration.
+	ApplySource(ctx context.Context, src SourceConfigInput) error
+
+	// EnableSource enables or disables a source.
+	EnableSource(ctx context.Context, id string, enabled bool) error
+
+	// DeleteSource removes a source and its associated entities.
+	DeleteSource(ctx context.Context, id string) error
+}
+
+// RefreshProvider is an optional interface that plugins can implement
+// to support on-demand refresh of data from sources.
+type RefreshProvider interface {
+	// Refresh triggers a reload of a specific source.
+	Refresh(ctx context.Context, sourceID string) (*RefreshResult, error)
+
+	// RefreshAll triggers a reload of all sources.
+	RefreshAll(ctx context.Context) (*RefreshResult, error)
+}
+
+// DiagnosticsProvider is an optional interface that plugins can implement
+// to provide diagnostic information about plugin health and source status.
+type DiagnosticsProvider interface {
+	// Diagnostics returns diagnostic information about the plugin.
+	Diagnostics(ctx context.Context) (*PluginDiagnostics, error)
+}
+
+// UIHintsProvider is an optional interface that plugins can implement
+// to provide display hints for rendering entities in the UI.
+type UIHintsProvider interface {
+	// UIHints returns display hints for the UI.
+	UIHints() UIHints
+}
+
+// CLIHintsProvider is an optional interface that plugins can implement
+// to provide display hints for CLI table rendering.
+type CLIHintsProvider interface {
+	// CLIHints returns display hints for the CLI.
+	CLIHints() CLIHints
+}
+
 // Migration represents a database migration for a plugin.
 type Migration struct {
 	// Version is a unique identifier for this migration (e.g., "001", "20240101_initial").

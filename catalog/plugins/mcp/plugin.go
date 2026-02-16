@@ -75,6 +75,39 @@ func (p *McpServerCatalogPlugin) Init(ctx context.Context, cfg plugin.Config) er
 
 	p.logger.Info("initializing mcp plugin")
 
+	// Build config paths from source properties or origins
+	paths := make([]string, 0)
+	pathsSet := make(map[string]bool)
+	for _, src := range cfg.Section.Sources {
+		// Check for loaderConfigPath property first (allows separate loader config)
+		if loaderPath, ok := src.Properties["loaderConfigPath"].(string); ok && loaderPath != "" {
+			// Resolve relative to source origin directory
+			if !filepath.IsAbs(loaderPath) && src.Origin != "" {
+				loaderPath = filepath.Join(filepath.Dir(src.Origin), loaderPath)
+			}
+			if !pathsSet[loaderPath] {
+				paths = append(paths, loaderPath)
+				pathsSet[loaderPath] = true
+			}
+		} else if src.Origin != "" && !pathsSet[src.Origin] {
+			paths = append(paths, src.Origin)
+			pathsSet[src.Origin] = true
+		}
+	}
+	if len(paths) == 0 {
+		paths = cfg.ConfigPaths
+	}
+
+	// Convert to absolute paths
+	absPaths := make([]string, 0, len(paths))
+	for _, path := range paths {
+		if absPath, err := filepath.Abs(path); err == nil {
+			absPaths = append(absPaths, absPath)
+		} else {
+			absPaths = append(absPaths, path)
+		}
+	}
+
 	// Initialize services from the database connection
 	services, err := p.initServices(cfg.DB)
 	if err != nil {
@@ -88,52 +121,10 @@ func (p *McpServerCatalogPlugin) Init(ctx context.Context, cfg plugin.Config) er
 		return fmt.Errorf("failed to register YAML provider: %w", err)
 	}
 
-	// Create the loader with no paths -- we'll pre-populate sources from the plugin config.
-	// The generic loader's parseAndMerge expects a flat SourceConfig format, but plugin
-	// configs use the multi-catalog CatalogSourcesConfig format. We bypass file parsing
-	// by passing empty paths and directly populating the SourceCollection.
-	p.loader = catalog.NewLoader(services, nil, registry)
+	// Create the loader
+	p.loader = catalog.NewLoader(services, absPaths, registry)
 
-	// Convert plugin config sources to the generic loader's Source format
-	// and populate the loader's SourceCollection directly.
-	sources := make(map[string]pkgcatalog.Source, len(cfg.Section.Sources))
-	for _, src := range cfg.Section.Sources {
-		origin := src.Origin
-		if origin == "" && len(cfg.ConfigPaths) > 0 {
-			origin = cfg.ConfigPaths[0]
-		}
-		if absOrigin, err := filepath.Abs(origin); err == nil {
-			origin = absOrigin
-		}
-
-		sources[src.ID] = pkgcatalog.Source{
-			ID:            src.ID,
-			Name:          src.Name,
-			Type:          src.Type,
-			Enabled:       src.Enabled,
-			Labels:        src.Labels,
-			Properties:    src.Properties,
-			IncludedItems: src.IncludedItems,
-			ExcludedItems: src.ExcludedItems,
-			Origin:        origin,
-		}
-	}
-
-	if len(sources) > 0 {
-		origin := "plugin-config"
-		if len(cfg.ConfigPaths) > 0 {
-			if absOrigin, err := filepath.Abs(cfg.ConfigPaths[0]); err == nil {
-				origin = absOrigin
-			} else {
-				origin = cfg.ConfigPaths[0]
-			}
-		}
-		if err := p.loader.Sources.Merge(origin, sources); err != nil {
-			return fmt.Errorf("failed to populate sources: %w", err)
-		}
-	}
-
-	p.logger.Info("mcp plugin initialized", "sources", len(sources))
+	p.logger.Info("mcp plugin initialized", "paths", absPaths)
 	return nil
 }
 

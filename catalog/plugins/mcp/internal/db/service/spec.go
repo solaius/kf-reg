@@ -23,7 +23,17 @@ func DatastoreSpec() *datastore.Spec {
 			AddString("transportType").
 			AddInt("toolCount").
 			AddInt("resourceCount").
-			AddInt("promptCount"),
+			AddInt("promptCount").
+			AddString("deploymentMode").
+			AddString("image").
+			AddString("endpoint").
+			AddString("supportedTransports").
+			AddString("license").
+			AddBoolean("verified").
+			AddBoolean("certified").
+			AddString("provider").
+			AddString("logo").
+			AddString("category"),
 		)
 }
 

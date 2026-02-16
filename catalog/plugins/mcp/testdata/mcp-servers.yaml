@@ -1,22 +1,112 @@
 mcpservers:
-  - name: "filesystem-server"
-    description: "MCP server providing filesystem operations for reading, writing, and managing files"
-    serverUrl: "https://mcp.example.com/filesystem"
+  - name: "kubernetes-mcp-server"
+    description: "MCP server for Kubernetes cluster management, pod operations, and resource monitoring"
+    serverUrl: "stdio://kubernetes-mcp-server"
     transportType: "stdio"
-    toolCount: 5
+    deploymentMode: "local"
+    image: "quay.io/kubeflow/kubernetes-mcp-server:latest"
+    supportedTransports: "stdio,http"
+    license: "Apache-2.0"
+    verified: true
+    certified: true
+    provider: "Red Hat"
+    category: "Red Hat"
+    toolCount: 12
+    resourceCount: 8
+    promptCount: 3
+
+  - name: "openshift-mcp-server"
+    description: "MCP server for OpenShift container platform management, builds, routes, and deployments"
+    serverUrl: "stdio://openshift-mcp-server"
+    transportType: "stdio"
+    deploymentMode: "local"
+    image: "quay.io/openshift/mcp-server:latest"
+    supportedTransports: "stdio,http"
+    license: "Apache-2.0"
+    verified: true
+    certified: true
+    provider: "Red Hat"
+    category: "Red Hat"
+    toolCount: 15
+    resourceCount: 10
+    promptCount: 4
+
+  - name: "ansible-mcp-server"
+    description: "MCP server for Ansible automation, playbook execution, and inventory management"
+    serverUrl: "stdio://ansible-mcp-server"
+    transportType: "stdio"
+    deploymentMode: "local"
+    image: "quay.io/ansible/mcp-server:latest"
+    supportedTransports: "stdio"
+    license: "Apache-2.0"
+    verified: true
+    certified: true
+    provider: "Red Hat"
+    category: "Red Hat"
+    toolCount: 8
+    resourceCount: 5
+    promptCount: 2
+
+  - name: "postgres-mcp-server"
+    description: "MCP server for PostgreSQL database management, query execution, and schema operations"
+    serverUrl: "stdio://postgres-mcp-server"
+    transportType: "stdio"
+    deploymentMode: "local"
+    image: "quay.io/crunchy/postgres-mcp:latest"
+    supportedTransports: "stdio"
+    license: "PostgreSQL"
+    verified: true
+    certified: false
+    provider: "Crunchy Data"
+    category: "Database"
+    toolCount: 10
+    resourceCount: 6
+    promptCount: 1
+
+  - name: "github-mcp-server"
+    description: "MCP server for GitHub repository management, issues, pull requests, and CI/CD workflows"
+    serverUrl: "https://api.github.com/mcp"
+    transportType: "http"
+    deploymentMode: "remote"
+    endpoint: "https://api.github.com/mcp"
+    supportedTransports: "http,sse"
+    license: "MIT"
+    verified: true
+    certified: false
+    provider: "GitHub"
+    category: "DevOps"
+    toolCount: 20
+    resourceCount: 15
+    promptCount: 5
+
+  - name: "slack-mcp-server"
+    description: "MCP server for Slack workspace management, messaging, channels, and bot interactions"
+    serverUrl: "https://slack.com/api/mcp"
+    transportType: "http"
+    deploymentMode: "remote"
+    endpoint: "https://slack.com/api/mcp"
+    supportedTransports: "http"
+    license: "MIT"
+    verified: false
+    certified: false
+    provider: "Slack"
+    category: "Communication"
+    toolCount: 8
     resourceCount: 3
     promptCount: 2
-  - name: "database-query-server"
-    description: "MCP server for executing database queries and managing schemas"
-    serverUrl: "https://mcp.example.com/database"
-    transportType: "sse"
-    toolCount: 10
-    resourceCount: 8
-    promptCount: 0
-  - name: "web-search-server"
-    description: "MCP server providing web search and content extraction capabilities"
-    serverUrl: "https://mcp.example.com/search"
+
+  - name: "jira-mcp-server"
+    description: "MCP server for Jira project management, issue tracking, sprints, and agile workflows"
+    serverUrl: "https://jira.atlassian.com/mcp"
     transportType: "http"
-    toolCount: 3
-    resourceCount: 0
-    promptCount: 1
+    deploymentMode: "remote"
+    endpoint: "https://jira.atlassian.com/mcp"
+    supportedTransports: "http"
+    license: "Apache-2.0"
+    verified: false
+    certified: false
+    provider: "Atlassian"
+    category: "DevOps"
+    toolCount: 12
+    resourceCount: 8
+    promptCount: 3

@@ -51,7 +51,7 @@ components:
             - serverUrl
 
           properties:
-            serverUrl:
+serverUrl:
               type: string
             transportType:
               type: string
@@ -61,6 +61,26 @@ components:
               type: integer
             promptCount:
               type: integer
+            deploymentMode:
+              type: string
+            image:
+              type: string
+            endpoint:
+              type: string
+            supportedTransports:
+              type: string
+            license:
+              type: string
+            verified:
+              type: boolean
+            certified:
+              type: boolean
+            provider:
+              type: string
+            logo:
+              type: string
+            category:
+              type: string
     McpServerList:
       allOf:
         - $ref: '#/components/schemas/BaseResourceList'

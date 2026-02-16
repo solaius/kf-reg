@@ -19,6 +19,7 @@ type HTTPClientInterface interface {
 	POST(url string, body io.Reader) ([]byte, error)
 	POSTWithContentType(url string, body io.Reader, contentType string) ([]byte, error)
 	PATCH(url string, body io.Reader) ([]byte, error)
+	DELETE(url string) ([]byte, error)
 }
 
 type HTTPClient struct {
@@ -227,6 +228,57 @@ func (c *HTTPClient) PATCH(url string, body io.Reader) ([]byte, error) {
 		return nil, httpError
 	}
 	return responseBody, nil
+}
+
+func (c *HTTPClient) DELETE(url string) ([]byte, error) {
+	requestId := uuid.NewString()
+
+	fullURL := c.baseURL + url
+	req, err := http.NewRequest(http.MethodDelete, fullURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	c.applyHeaders(req)
+
+	logUpstreamReq(c.logger, requestId, req)
+
+	response, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+
+	body, err := io.ReadAll(response.Body)
+	logUpstreamResp(c.logger, requestId, response, body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading response body: %w", err)
+	}
+
+	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusNoContent {
+		var errorResponse ErrorResponse
+		if err := json.Unmarshal(body, &errorResponse); err != nil {
+			c.logger.Warn("received non-JSON error response",
+				"status_code", response.StatusCode,
+				"content_type", response.Header.Get("Content-Type"),
+				"body_preview", string(body[:min(len(body), 200)]))
+
+			errorResponse = ErrorResponse{
+				Code:    strconv.Itoa(response.StatusCode),
+				Message: fmt.Sprintf("HTTP %d: %s", response.StatusCode, string(body)),
+			}
+		}
+		httpError := &HTTPError{
+			StatusCode:    response.StatusCode,
+			ErrorResponse: errorResponse,
+		}
+		if httpError.Code == "" {
+			httpError.Code = strconv.Itoa(response.StatusCode)
+		}
+		return nil, httpError
+	}
+
+	return body, nil
 }
 
 func (c *HTTPClient) applyHeaders(req *http.Request) {

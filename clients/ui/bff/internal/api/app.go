@@ -13,6 +13,7 @@ import (
 	k8s "github.com/kubeflow/model-registry/ui/bff/internal/integrations/kubernetes"
 	k8mocks "github.com/kubeflow/model-registry/ui/bff/internal/integrations/kubernetes/k8mocks"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/fake"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
 	helper "github.com/kubeflow/model-registry/ui/bff/internal/helpers"
@@ -75,6 +76,24 @@ const (
 	ModelCatalogSettingsSourceConfigListPath = ModelCatalogSettingsPathPrefix + "/source_configs"
 	ModelCatalogSettingsSourceConfigPath     = ModelCatalogSettingsSourceConfigListPath + "/:" + CatalogSourceId
 	CatalogSourcePreviewPath                 = ModelCatalogSettingsPathPrefix + "/source_preview"
+
+	// Plugin management routes
+	CatalogPluginName                = "plugin_name"
+	CatalogPluginManagementPrefix    = ApiPathPrefix + "/catalog/:" + CatalogPluginName
+	CatalogPluginSourcesPath         = CatalogPluginManagementPrefix + "/sources"
+	CatalogPluginSourcePath          = CatalogPluginSourcesPath + "/:" + CatalogSourceId
+	CatalogPluginSourceEnablePath    = CatalogPluginSourcePath + "/enable"
+	CatalogPluginSourceValidatePath  = CatalogPluginManagementPrefix + "/validate-source"
+	CatalogPluginSourceApplyPath     = CatalogPluginManagementPrefix + "/apply-source"
+	CatalogPluginRefreshPath         = CatalogPluginManagementPrefix + "/refresh"
+	CatalogPluginRefreshSourcePath   = CatalogPluginRefreshPath + "/:" + CatalogSourceId
+	CatalogPluginDiagnosticsPath     = CatalogPluginManagementPrefix + "/diagnostics"
+
+	// MCP catalog browsing routes
+	McpServerName         = "mcp_server_name"
+	McpCatalogPrefix      = ApiPathPrefix + "/mcp_catalog"
+	McpCatalogServersPath = McpCatalogPrefix + "/mcpservers"
+	McpCatalogServerPath  = McpCatalogServersPath + "/:" + McpServerName
 )
 
 type App struct {
@@ -140,7 +159,19 @@ func NewApp(cfg config.EnvConfig, logger *slog.Logger) (*App, error) {
 			Cancel: cancel,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to setup envtest: %w", err)
+			// Fallback to fake.NewSimpleClientset when envtest binaries are unavailable
+			// (e.g. on Windows where etcd/kube-apiserver aren't installed).
+			// This only works for internal auth since token-based auth requires a real REST config.
+			if cfg.AuthMethod != config.AuthMethodInternal {
+				return nil, fmt.Errorf("failed to setup envtest (required for token auth): %w", err)
+			}
+			logger.Warn("envtest unavailable, falling back to fake clientset", slog.String("error", err.Error()))
+			cancel()
+			clientset = fake.NewSimpleClientset()
+			if setupErr := k8mocks.SetupFakeClientset(clientset, logger); setupErr != nil {
+				return nil, fmt.Errorf("failed to setup fake clientset: %w", setupErr)
+			}
+			testEnv = nil
 		}
 		//create mocked kubernetes client factory
 		k8sFactory, err = k8mocks.NewMockedKubernetesClientFactory(clientset, testEnv, cfg, logger)
@@ -240,6 +271,21 @@ func (app *App) Routes() http.Handler {
 	apiRouter.GET(CatalogSourceModelArtifactsCatchAll, app.AttachNamespace(app.AttachModelCatalogRESTClient(app.GetCatalogSourceModelArtifactsHandler)))
 	apiRouter.GET(CatalogModelPerformanceArtifacts, app.AttachNamespace(app.AttachModelCatalogRESTClient(app.GetCatalogModelPerformanceArtifactsHandler)))
 	apiRouter.GET(CatalogPluginListPath, app.AttachNamespace(app.AttachModelCatalogRESTClient(app.GetAllCatalogPluginsHandler)))
+
+	// Plugin management routes
+	apiRouter.GET(CatalogPluginSourcesPath, app.AttachNamespace(app.AttachModelCatalogRESTClient(app.GetPluginSourcesHandler)))
+	apiRouter.POST(CatalogPluginSourceValidatePath, app.AttachNamespace(app.AttachModelCatalogRESTClient(app.ValidatePluginSourceConfigHandler)))
+	apiRouter.POST(CatalogPluginSourceApplyPath, app.AttachNamespace(app.AttachModelCatalogRESTClient(app.ApplyPluginSourceConfigHandler)))
+	apiRouter.POST(CatalogPluginSourceEnablePath, app.AttachNamespace(app.AttachModelCatalogRESTClient(app.EnablePluginSourceHandler)))
+	apiRouter.DELETE(CatalogPluginSourcePath, app.AttachNamespace(app.AttachModelCatalogRESTClient(app.DeletePluginSourceHandler)))
+	apiRouter.POST(CatalogPluginRefreshPath, app.AttachNamespace(app.AttachModelCatalogRESTClient(app.RefreshPluginHandler)))
+	apiRouter.POST(CatalogPluginRefreshSourcePath, app.AttachNamespace(app.AttachModelCatalogRESTClient(app.RefreshPluginSourceHandler)))
+	apiRouter.GET(CatalogPluginDiagnosticsPath, app.AttachNamespace(app.AttachModelCatalogRESTClient(app.GetPluginDiagnosticsHandler)))
+
+	// MCP catalog browsing routes
+	apiRouter.GET(McpCatalogServersPath, app.AttachNamespace(app.AttachModelCatalogRESTClient(app.GetMcpServersHandler)))
+	apiRouter.GET(McpCatalogServerPath, app.AttachNamespace(app.AttachModelCatalogRESTClient(app.GetMcpServerHandler)))
+
 	// Kubernetes routes
 	apiRouter.GET(UserPath, app.UserHandler)
 	apiRouter.GET(ModelRegistryListPath, app.AttachNamespace(app.RequireListServiceAccessInNamespace(app.GetAllModelRegistriesHandler)))

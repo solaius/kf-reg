@@ -251,6 +251,235 @@ func (m *ModelCatalogClientMock) GetAllCatalogPlugins(client httpclient.HTTPClie
 	return &pluginList, nil
 }
 
+func (m *ModelCatalogClientMock) GetPluginSources(client httpclient.HTTPClientInterface, basePath string) (*models.SourceInfoList, error) {
+	return &models.SourceInfoList{
+		Sources: []models.SourceInfo{
+			{
+				Id:      "source-1",
+				Name:    "Test Source",
+				Type:    "yaml",
+				Enabled: true,
+				Status:  "ready",
+			},
+		},
+		Count: 1,
+	}, nil
+}
+
+func (m *ModelCatalogClientMock) ValidatePluginSourceConfig(client httpclient.HTTPClientInterface, basePath string, payload models.SourceConfigPayload) (*models.ValidationResult, error) {
+	return &models.ValidationResult{
+		Valid:   true,
+		Message: "configuration is valid",
+	}, nil
+}
+
+func (m *ModelCatalogClientMock) ApplyPluginSourceConfig(client httpclient.HTTPClientInterface, basePath string, payload models.SourceConfigPayload) (*models.SourceInfo, error) {
+	enabled := true
+	if payload.Enabled != nil {
+		enabled = *payload.Enabled
+	}
+	return &models.SourceInfo{
+		Id:      payload.Id,
+		Name:    payload.Name,
+		Type:    payload.Type,
+		Enabled: enabled,
+		Status:  "ready",
+	}, nil
+}
+
+func (m *ModelCatalogClientMock) EnablePluginSource(client httpclient.HTTPClientInterface, basePath string, sourceId string, payload models.SourceEnableRequest) (*models.SourceInfo, error) {
+	return &models.SourceInfo{
+		Id:      sourceId,
+		Name:    "Test Source",
+		Type:    "yaml",
+		Enabled: payload.Enabled,
+		Status:  "ready",
+	}, nil
+}
+
+func (m *ModelCatalogClientMock) DeletePluginSource(client httpclient.HTTPClientInterface, basePath string, sourceId string) error {
+	return nil
+}
+
+func (m *ModelCatalogClientMock) RefreshPlugin(client httpclient.HTTPClientInterface, basePath string) (*models.RefreshResult, error) {
+	return &models.RefreshResult{
+		Status:  "completed",
+		Message: "all sources refreshed",
+	}, nil
+}
+
+func (m *ModelCatalogClientMock) RefreshPluginSource(client httpclient.HTTPClientInterface, basePath string, sourceId string) (*models.RefreshResult, error) {
+	return &models.RefreshResult{
+		Status:   "completed",
+		Message:  "source refreshed",
+		SourceId: sourceId,
+	}, nil
+}
+
+func (m *ModelCatalogClientMock) GetPluginDiagnostics(client httpclient.HTTPClientInterface, basePath string) (*models.PluginDiagnostics, error) {
+	return &models.PluginDiagnostics{
+		PluginName:  "model",
+		Healthy:     true,
+		Version:     "v1alpha1",
+		SourceCount: 1,
+	}, nil
+}
+
+func (m *ModelCatalogClientMock) ResolvePluginBasePath(client httpclient.HTTPClientInterface, pluginName string) (string, error) {
+	pluginList := GetCatalogPluginListMock()
+	for _, plugin := range pluginList.Plugins {
+		if plugin.Name == pluginName {
+			return plugin.BasePath, nil
+		}
+	}
+	return "", fmt.Errorf("plugin not found: %s", pluginName)
+}
+
+func getMcpServersMockData() []models.McpServer {
+	return []models.McpServer{
+		{
+			ID:                  "1",
+			Name:                "kubernetes-mcp-server",
+			Description:         "MCP server for Kubernetes cluster management. Provides tools for pod lifecycle, deployment scaling, service discovery, and cluster diagnostics.",
+			ServerUrl:           "stdio://kubernetes-mcp-server",
+			TransportType:       "stdio",
+			DeploymentMode:      "local",
+			Image:               "quay.io/kubeflow/kubernetes-mcp-server:latest",
+			SupportedTransports: "stdio,http",
+			License:             "Apache-2.0",
+			Verified:            true,
+			Certified:           true,
+			Provider:            "Red Hat",
+			Category:            "Red Hat",
+			ToolCount:           12,
+			ResourceCount:       8,
+			PromptCount:         3,
+		},
+		{
+			ID:                  "2",
+			Name:                "openshift-mcp-server",
+			Description:         "MCP server for OpenShift Container Platform. Extends Kubernetes tools with OpenShift-specific resources: Routes, DeploymentConfigs, BuildConfigs, and ImageStreams.",
+			ServerUrl:           "stdio://openshift-mcp-server",
+			TransportType:       "stdio",
+			DeploymentMode:      "local",
+			Image:               "quay.io/openshift/mcp-server:latest",
+			SupportedTransports: "stdio,http",
+			License:             "Apache-2.0",
+			Verified:            true,
+			Certified:           true,
+			Provider:            "Red Hat",
+			Category:            "Red Hat",
+			ToolCount:           18,
+			ResourceCount:       12,
+			PromptCount:         4,
+		},
+		{
+			ID:                  "3",
+			Name:                "ansible-mcp-server",
+			Description:         "MCP server for Ansible Automation Platform. Provides tools for playbook execution, inventory management, role discovery, and collection browsing.",
+			ServerUrl:           "stdio://ansible-mcp-server",
+			TransportType:       "stdio",
+			DeploymentMode:      "local",
+			Image:               "quay.io/ansible/mcp-server:latest",
+			SupportedTransports: "stdio",
+			License:             "Apache-2.0",
+			Verified:            true,
+			Certified:           true,
+			Provider:            "Red Hat",
+			Category:            "Red Hat",
+			ToolCount:           10,
+			ResourceCount:       6,
+			PromptCount:         5,
+		},
+		{
+			ID:                  "4",
+			Name:                "postgres-mcp-server",
+			Description:         "MCP server for PostgreSQL database operations. Provides tools for query execution, schema inspection, migration management, and performance analysis.",
+			ServerUrl:           "stdio://postgres-mcp-server",
+			TransportType:       "stdio",
+			DeploymentMode:      "local",
+			Image:               "quay.io/crunchy/postgres-mcp:latest",
+			SupportedTransports: "stdio",
+			License:             "PostgreSQL",
+			Verified:            true,
+			Provider:            "Crunchy Data",
+			Category:            "Database",
+			ToolCount:           8,
+			ResourceCount:       5,
+			PromptCount:         2,
+		},
+		{
+			ID:                  "5",
+			Name:                "github-mcp-server",
+			Description:         "MCP server for GitHub API integration. Provides tools for repository management, pull request workflows, issue tracking, and Actions automation.",
+			ServerUrl:           "https://api.github.com/mcp",
+			TransportType:       "http",
+			DeploymentMode:      "remote",
+			Endpoint:            "https://api.github.com/mcp",
+			SupportedTransports: "http,sse",
+			License:             "MIT",
+			Verified:            true,
+			Provider:            "GitHub",
+			Category:            "DevOps",
+			ToolCount:           15,
+			ResourceCount:       10,
+			PromptCount:         3,
+		},
+		{
+			ID:                  "6",
+			Name:                "slack-mcp-server",
+			Description:         "MCP server for Slack workspace integration. Provides tools for messaging, channel management, user lookup, and workflow automation.",
+			ServerUrl:           "https://slack.com/api/mcp",
+			TransportType:       "http",
+			DeploymentMode:      "remote",
+			Endpoint:            "https://slack.com/api/mcp",
+			SupportedTransports: "http",
+			License:             "MIT",
+			Provider:            "Slack",
+			Category:            "Communication",
+			ToolCount:           9,
+			ResourceCount:       4,
+			PromptCount:         2,
+		},
+		{
+			ID:                  "7",
+			Name:                "jira-mcp-server",
+			Description:         "MCP server for Jira project management. Provides tools for issue CRUD, sprint management, board queries, and workflow transitions.",
+			ServerUrl:           "https://jira.atlassian.com/mcp",
+			TransportType:       "http",
+			DeploymentMode:      "remote",
+			Endpoint:            "https://jira.atlassian.com/mcp",
+			SupportedTransports: "http",
+			License:             "Apache-2.0",
+			Provider:            "Atlassian",
+			Category:            "DevOps",
+			ToolCount:           11,
+			ResourceCount:       7,
+			PromptCount:         3,
+		},
+	}
+}
+
+func (m *ModelCatalogClientMock) GetMcpServers(client httpclient.HTTPClientInterface, basePath string) (*models.McpServerList, error) {
+	servers := getMcpServersMockData()
+	return &models.McpServerList{
+		Items: servers,
+		Size:  len(servers),
+	}, nil
+}
+
+func (m *ModelCatalogClientMock) GetMcpServer(client httpclient.HTTPClientInterface, basePath string, name string) (*models.McpServer, error) {
+	for _, s := range getMcpServersMockData() {
+		if s.Name == name {
+			return &s, nil
+		}
+	}
+	return &models.McpServer{
+		ID:   "unknown",
+		Name: name,
+	}, nil
+}
+
 func (m *ModelCatalogClientMock) CreateCatalogSourcePreview(client httpclient.HTTPClientInterface, sourcePreviewPayload models.CatalogSourcePreviewRequest, pageValues url.Values) (*models.CatalogSourcePreviewResult, error) {
 	filterStatus := pageValues.Get("filterStatus")
 	if filterStatus == "" {

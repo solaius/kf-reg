@@ -22,6 +22,16 @@ func init() {
 		"toolCount": true,
 		"resourceCount": true,
 		"promptCount": true,
+		"deploymentMode": true,
+		"image": true,
+		"endpoint": true,
+		"supportedTransports": true,
+		"license": true,
+		"verified": true,
+		"certified": true,
+		"provider": true,
+		"logo": true,
+		"category": true,
 	}
 }
 
@@ -59,6 +69,26 @@ func (m *entityMappings) GetPropertyDefinitionForRestEntity(t filter.RestEntityT
 		return filter.PropertyDefinition{Location: filter.PropertyTable, ValueType: "int_value", Column: "resourceCount"}
 	case "promptCount":
 		return filter.PropertyDefinition{Location: filter.PropertyTable, ValueType: "int_value", Column: "promptCount"}
+	case "deploymentMode":
+		return filter.PropertyDefinition{Location: filter.PropertyTable, ValueType: "string_value", Column: "deploymentMode"}
+	case "image":
+		return filter.PropertyDefinition{Location: filter.PropertyTable, ValueType: "string_value", Column: "image"}
+	case "endpoint":
+		return filter.PropertyDefinition{Location: filter.PropertyTable, ValueType: "string_value", Column: "endpoint"}
+	case "supportedTransports":
+		return filter.PropertyDefinition{Location: filter.PropertyTable, ValueType: "string_value", Column: "supportedTransports"}
+	case "license":
+		return filter.PropertyDefinition{Location: filter.PropertyTable, ValueType: "string_value", Column: "license"}
+	case "verified":
+		return filter.PropertyDefinition{Location: filter.PropertyTable, ValueType: "int_value", Column: "verified"}
+	case "certified":
+		return filter.PropertyDefinition{Location: filter.PropertyTable, ValueType: "int_value", Column: "certified"}
+	case "provider":
+		return filter.PropertyDefinition{Location: filter.PropertyTable, ValueType: "string_value", Column: "provider"}
+	case "logo":
+		return filter.PropertyDefinition{Location: filter.PropertyTable, ValueType: "string_value", Column: "logo"}
+	case "category":
+		return filter.PropertyDefinition{Location: filter.PropertyTable, ValueType: "string_value", Column: "category"}
 
 	default:
 		// Unknown properties are treated as custom properties in the ContextProperty table

@@ -17,15 +17,25 @@ import (
 
 // yamlMcpServer represents a McpServer entry in the YAML catalog file.
 type yamlMcpServer struct {
-	Name             string         `json:"name" yaml:"name"`
-	ExternalId       string         `json:"externalId,omitempty" yaml:"externalId,omitempty"`
-	Description      *string        `json:"description,omitempty" yaml:"description,omitempty"`
-	ServerUrl        string         `json:"serverUrl" yaml:"serverUrl"`
-	TransportType    *string        `json:"transportType,omitempty" yaml:"transportType,omitempty"`
-	ToolCount        *int32         `json:"toolCount,omitempty" yaml:"toolCount,omitempty"`
-	ResourceCount    *int32         `json:"resourceCount,omitempty" yaml:"resourceCount,omitempty"`
-	PromptCount      *int32         `json:"promptCount,omitempty" yaml:"promptCount,omitempty"`
-	CustomProperties map[string]any `json:"customProperties,omitempty" yaml:"customProperties,omitempty"`
+	Name                string         `json:"name" yaml:"name"`
+	ExternalId          string         `json:"externalId,omitempty" yaml:"externalId,omitempty"`
+	Description         *string        `json:"description,omitempty" yaml:"description,omitempty"`
+	ServerUrl           string         `json:"serverUrl" yaml:"serverUrl"`
+	TransportType       *string        `json:"transportType,omitempty" yaml:"transportType,omitempty"`
+	ToolCount           *int32         `json:"toolCount,omitempty" yaml:"toolCount,omitempty"`
+	ResourceCount       *int32         `json:"resourceCount,omitempty" yaml:"resourceCount,omitempty"`
+	PromptCount         *int32         `json:"promptCount,omitempty" yaml:"promptCount,omitempty"`
+	DeploymentMode      *string        `json:"deploymentMode,omitempty" yaml:"deploymentMode,omitempty"`
+	Image               *string        `json:"image,omitempty" yaml:"image,omitempty"`
+	Endpoint            *string        `json:"endpoint,omitempty" yaml:"endpoint,omitempty"`
+	SupportedTransports *string        `json:"supportedTransports,omitempty" yaml:"supportedTransports,omitempty"`
+	License             *string        `json:"license,omitempty" yaml:"license,omitempty"`
+	Verified            *bool          `json:"verified,omitempty" yaml:"verified,omitempty"`
+	Certified           *bool          `json:"certified,omitempty" yaml:"certified,omitempty"`
+	Provider            *string        `json:"provider,omitempty" yaml:"provider,omitempty"`
+	Logo                *string        `json:"logo,omitempty" yaml:"logo,omitempty"`
+	Category            *string        `json:"category,omitempty" yaml:"category,omitempty"`
+	CustomProperties    map[string]any `json:"customProperties,omitempty" yaml:"customProperties,omitempty"`
 }
 
 // yamlMcpServerCatalog is the structure of the YAML catalog file.
@@ -114,6 +124,36 @@ func parseMcpServerCatalog(catalogData, artifactsData []byte) ([]pkgcatalog.Reco
 		}
 		if item.PromptCount != nil {
 			props = append(props, sharedmodels.NewIntProperty("promptCount", *item.PromptCount, false))
+		}
+		if item.DeploymentMode != nil {
+			props = append(props, sharedmodels.NewStringProperty("deploymentMode", *item.DeploymentMode, false))
+		}
+		if item.Image != nil {
+			props = append(props, sharedmodels.NewStringProperty("image", *item.Image, false))
+		}
+		if item.Endpoint != nil {
+			props = append(props, sharedmodels.NewStringProperty("endpoint", *item.Endpoint, false))
+		}
+		if item.SupportedTransports != nil {
+			props = append(props, sharedmodels.NewStringProperty("supportedTransports", *item.SupportedTransports, false))
+		}
+		if item.License != nil {
+			props = append(props, sharedmodels.NewStringProperty("license", *item.License, false))
+		}
+		if item.Verified != nil {
+			props = append(props, sharedmodels.NewBoolProperty("verified", *item.Verified, false))
+		}
+		if item.Certified != nil {
+			props = append(props, sharedmodels.NewBoolProperty("certified", *item.Certified, false))
+		}
+		if item.Provider != nil {
+			props = append(props, sharedmodels.NewStringProperty("provider", *item.Provider, false))
+		}
+		if item.Logo != nil {
+			props = append(props, sharedmodels.NewStringProperty("logo", *item.Logo, false))
+		}
+		if item.Category != nil {
+			props = append(props, sharedmodels.NewStringProperty("category", *item.Category, false))
 		}
 		if len(props) > 0 {
 			entity.(*models.McpServerImpl).Properties = &props

@@ -198,6 +198,13 @@ func (l *Loader) loadAllModels(ctx context.Context) error {
 
 // reloadAll re-parses all config files and reloads all models.
 // Called when any config file changes.
+// Reload re-parses config files and reloads all models.
+// This is the public API for triggering a reload.
+func (l *Loader) Reload(ctx context.Context) error {
+	l.reloadAll(ctx)
+	return nil
+}
+
 func (l *Loader) reloadAll(ctx context.Context) {
 	// Re-parse all config files
 	for _, path := range l.paths {

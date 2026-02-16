@@ -23,6 +23,36 @@ spec:
       - name: promptCount
         type: integer
         description: Number of prompts exposed
+      - name: deploymentMode
+        type: string
+        description: "Deployment mode: local (container) or remote (endpoint)"
+      - name: image
+        type: string
+        description: "Container image reference (e.g. quay.io/org/image:tag)"
+      - name: endpoint
+        type: string
+        description: "Remote endpoint URL for remote MCP servers"
+      - name: supportedTransports
+        type: string
+        description: "Comma-separated transport protocols: stdio, http, sse"
+      - name: license
+        type: string
+        description: "License identifier (e.g. Apache-2.0, MIT)"
+      - name: verified
+        type: boolean
+        description: "Whether the MCP server has been verified"
+      - name: certified
+        type: boolean
+        description: "Whether the MCP server is certified by Red Hat"
+      - name: provider
+        type: string
+        description: "Organization that provides this MCP server"
+      - name: logo
+        type: string
+        description: "URL or data URI for the server logo"
+      - name: category
+        type: string
+        description: "Category label (e.g. Red Hat, DevOps, Database, Communication)"
   providers:
     - type: yaml
   api:

@@ -29,23 +29,41 @@ type Server struct {
 	logger        *slog.Logger
 	plugins       []CatalogPlugin
 	failedPlugins []failedPlugin
+	roleExtractor RoleExtractor
 	mu            sync.RWMutex
 }
 
+// ServerOption configures a Server.
+type ServerOption func(*Server)
+
+// WithRoleExtractor sets a custom role extractor for RBAC middleware.
+func WithRoleExtractor(extractor RoleExtractor) ServerOption {
+	return func(s *Server) {
+		s.roleExtractor = extractor
+	}
+}
+
 // NewServer creates a new plugin server.
-func NewServer(cfg *CatalogSourcesConfig, configPaths []string, db *gorm.DB, logger *slog.Logger) *Server {
+func NewServer(cfg *CatalogSourcesConfig, configPaths []string, db *gorm.DB, logger *slog.Logger, opts ...ServerOption) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
 
-	return &Server{
+	s := &Server{
 		db:            db,
 		config:        cfg,
 		configPaths:   configPaths,
 		logger:        logger,
 		plugins:       make([]CatalogPlugin, 0),
 		failedPlugins: make([]failedPlugin, 0),
+		roleExtractor: DefaultRoleExtractor,
 	}
+
+	for _, opt := range opts {
+		opt(s)
+	}
+
+	return s
 }
 
 // Init initializes all registered plugins that have configuration.
@@ -136,6 +154,17 @@ func (s *Server) MountRoutes() chi.Router {
 		s.router.Route(basePath, func(r chi.Router) {
 			if err := p.RegisterRoutes(r); err != nil {
 				s.logger.Error("failed to register routes", "plugin", p.Name(), "error", err)
+			}
+
+			// Mount management routes if the plugin implements any management interfaces
+			_, hasSM := p.(SourceManager)
+			_, hasRP := p.(RefreshProvider)
+			_, hasDP := p.(DiagnosticsProvider)
+			if hasSM || hasRP || hasDP {
+				mgmtRouter := managementRouter(p, s.roleExtractor)
+				r.Mount("/", mgmtRouter)
+				s.logger.Info("mounted management routes", "plugin", p.Name(),
+					"sourceManager", hasSM, "refresh", hasRP, "diagnostics", hasDP)
 			}
 		})
 	}
@@ -252,15 +281,24 @@ func (s *Server) pluginsHandler(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	type managementCaps struct {
+		SourceManager bool `json:"sourceManager"`
+		Refresh       bool `json:"refresh"`
+		Diagnostics   bool `json:"diagnostics"`
+	}
+
 	type pluginInfo struct {
-		Name         string              `json:"name"`
-		Version      string              `json:"version"`
-		Description  string              `json:"description"`
-		BasePath     string              `json:"basePath"`
-		Healthy      bool                `json:"healthy"`
-		EntityKinds  []string            `json:"entityKinds,omitempty"`
-		Capabilities *PluginCapabilities `json:"capabilities,omitempty"`
-		Status       *PluginStatus       `json:"status,omitempty"`
+		Name           string              `json:"name"`
+		Version        string              `json:"version"`
+		Description    string              `json:"description"`
+		BasePath       string              `json:"basePath"`
+		Healthy        bool                `json:"healthy"`
+		EntityKinds    []string            `json:"entityKinds,omitempty"`
+		Capabilities   *PluginCapabilities `json:"capabilities,omitempty"`
+		Status         *PluginStatus       `json:"status,omitempty"`
+		Management     *managementCaps     `json:"management,omitempty"`
+		UIHintsData    *UIHints            `json:"uiHints,omitempty"`
+		CLIHintsData   *CLIHints           `json:"cliHints,omitempty"`
 	}
 
 	plugins := make([]pluginInfo, 0, len(s.plugins)+len(s.failedPlugins))
@@ -287,6 +325,27 @@ func (s *Server) pluginsHandler(w http.ResponseWriter, r *http.Request) {
 		if sp, ok := p.(StatusProvider); ok {
 			status := sp.Status()
 			info.Status = &status
+		}
+
+		// Report management capabilities
+		_, hasSM := p.(SourceManager)
+		_, hasRP := p.(RefreshProvider)
+		_, hasDP := p.(DiagnosticsProvider)
+		if hasSM || hasRP || hasDP {
+			info.Management = &managementCaps{
+				SourceManager: hasSM,
+				Refresh:       hasRP,
+				Diagnostics:   hasDP,
+			}
+		}
+
+		if hp, ok := p.(UIHintsProvider); ok {
+			hints := hp.UIHints()
+			info.UIHintsData = &hints
+		}
+		if cp, ok := p.(CLIHintsProvider); ok {
+			hints := cp.CLIHints()
+			info.CLIHintsData = &hints
 		}
 
 		plugins = append(plugins, info)

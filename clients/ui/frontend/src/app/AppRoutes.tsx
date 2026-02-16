@@ -7,7 +7,14 @@ import ModelRegistrySettingsRoutes from './pages/settings/ModelRegistrySettingsR
 import ModelRegistryRoutes from './pages/modelRegistry/ModelRegistryRoutes';
 import ModelCatalogRoutes from './pages/modelCatalog/ModelCatalogRoutes';
 import ModelCatalogSettingsRoutes from './pages/modelCatalogSettings/ModelCatalogSettingsRoutes';
+import CatalogManagementRoutes from './pages/catalogManagement/CatalogManagementRoutes';
+import McpCatalogRoutes from './pages/mcpCatalog/McpCatalogRoutes';
 import { modelCatalogUrl } from './routes/modelCatalog/catalogModel';
+import { mcpCatalogUrl, MCP_CATALOG_PAGE_TITLE } from './routes/mcpCatalog/mcpCatalog';
+import {
+  catalogManagementUrl,
+  CATALOG_MANAGEMENT_PAGE_TITLE,
+} from './routes/catalogManagement/catalogManagement';
 import {
   catalogSettingsUrl,
   CATALOG_SETTINGS_PAGE_TITLE,
@@ -30,6 +37,7 @@ export const useAdminSettings = (): NavDataItem[] => {
   // Only show Model Catalog Settings in Standalone or Federated mode
   if (isStandalone || isFederated) {
     settingsChildren.push({ label: CATALOG_SETTINGS_PAGE_TITLE, path: catalogSettingsUrl() });
+    settingsChildren.push({ label: CATALOG_MANAGEMENT_PAGE_TITLE, path: catalogManagementUrl() });
   }
 
   return [
@@ -59,6 +67,10 @@ export const useNavData = (): NavDataItem[] => {
       label: 'Model Catalog',
       path: modelCatalogUrl(),
     });
+    baseNavItems.push({
+      label: MCP_CATALOG_PAGE_TITLE,
+      path: mcpCatalogUrl(),
+    });
   }
 
   return [...baseNavItems, ...useAdminSettings()];
@@ -78,7 +90,9 @@ const AppRoutes: React.FC = () => {
       {(isStandalone || isFederated) && (
         <>
           <Route path={`${modelCatalogUrl()}/*`} element={<ModelCatalogRoutes />} />
+          <Route path={`${mcpCatalogUrl()}/*`} element={<McpCatalogRoutes />} />
           <Route path={`${catalogSettingsUrl()}/*`} element={<ModelCatalogSettingsRoutes />} />
+          <Route path={`${catalogManagementUrl()}/*`} element={<CatalogManagementRoutes />} />
         </>
       )}
       <Route path="*" element={<NotFound />} />

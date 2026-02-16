@@ -168,7 +168,7 @@ func datastorePropertyMethod(specType string) string {
 	case "integer", "int", "int64":
 		return "AddInt"
 	case "boolean", "bool":
-		return "AddBool"
+		return "AddBoolean"
 	case "number", "float", "double":
 		return "AddDouble"
 	case "struct", "object":

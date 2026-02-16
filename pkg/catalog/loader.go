@@ -166,6 +166,11 @@ func NewLoader[E any, A any](config LoaderConfig[E, A]) *Loader[E, A] {
 	}
 }
 
+// Config returns the loader's configuration.
+func (l *Loader[E, A]) Config() LoaderConfig[E, A] {
+	return l.config
+}
+
 // RegisterEventHandler adds a function that will be called for every
 // successfully processed record. This should be called before Start.
 func (l *Loader[E, A]) RegisterEventHandler(fn LoaderEventHandler[E, A]) {

@@ -28,6 +28,9 @@ func NewMockedKubernetesClientFactory(clientset kubernetes.Interface, testEnv *e
 		return k8sFactory, nil
 
 	case config.AuthMethodUser:
+		if testEnv == nil {
+			return nil, fmt.Errorf("envtest environment required for token-based auth mock")
+		}
 		k8sFactory, err := NewTokenClientFactory(clientset, testEnv.Config, logger)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create static client factory: %w", err)

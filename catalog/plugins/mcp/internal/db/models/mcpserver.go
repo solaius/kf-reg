@@ -23,6 +23,16 @@ type McpServerAttributes struct {
 	ToolCount	*int32
 	ResourceCount	*int32
 	PromptCount	*int32
+	DeploymentMode	*string
+	Image	*string
+	Endpoint	*string
+	SupportedTransports	*string
+	License	*string
+	Verified	*bool
+	Certified	*bool
+	Provider	*string
+	Logo	*string
+	Category	*string
 }
 
 // McpServer is the interface for McpServer entities.
