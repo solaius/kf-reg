@@ -1,0 +1,8 @@
+catalogs:
+  - id: mcp-default
+    name: "MCP Servers"
+    type: yaml
+    enabled: true
+    labels: ["MCP Servers"]
+    properties:
+      yamlCatalogPath: "../plugins/mcp/data/mcp-servers.yaml"

@@ -26,7 +26,12 @@ func (app *App) GetAllCatalogSourcesHandler(w http.ResponseWriter, r *http.Reque
 	catalogSources, err := app.repositories.ModelCatalogClient.GetAllCatalogSources(client, r.URL.Query())
 
 	if err != nil {
-		app.serverErrorResponse(w, r, err)
+		var httpErr *httpclient.HTTPError
+		if errors.As(err, &httpErr) {
+			app.errorResponse(w, r, httpErr)
+		} else {
+			app.serverErrorResponse(w, r, err)
+		}
 		return
 	}
 
@@ -55,7 +60,12 @@ func (app *App) GetCatalogSourceModelHandler(w http.ResponseWriter, r *http.Requ
 	catalogModel, err := app.repositories.ModelCatalogClient.GetCatalogSourceModel(client, ps.ByName(CatalogSourceId), newModelName)
 
 	if err != nil {
-		app.serverErrorResponse(w, r, err)
+		var httpErr *httpclient.HTTPError
+		if errors.As(err, &httpErr) {
+			app.errorResponse(w, r, httpErr)
+		} else {
+			app.serverErrorResponse(w, r, err)
+		}
 		return
 	}
 
@@ -84,7 +94,12 @@ func (app *App) GetCatalogSourceModelArtifactsHandler(w http.ResponseWriter, r *
 	catalogModelArtifacts, err := app.repositories.ModelCatalogClient.GetCatalogSourceModelArtifacts(client, ps.ByName(CatalogSourceId), newModelName, r.URL.Query())
 
 	if err != nil {
-		app.serverErrorResponse(w, r, err)
+		var httpErr *httpclient.HTTPError
+		if errors.As(err, &httpErr) {
+			app.errorResponse(w, r, httpErr)
+		} else {
+			app.serverErrorResponse(w, r, err)
+		}
 		return
 	}
 
@@ -112,7 +127,12 @@ func (app *App) GetCatalogModelPerformanceArtifactsHandler(w http.ResponseWriter
 	catalogModelPerformanceArtifacts, err := app.repositories.ModelCatalogClient.GetCatalogModelPerformanceArtifacts(client, ps.ByName(CatalogSourceId), newModelName, r.URL.Query())
 
 	if err != nil {
-		app.serverErrorResponse(w, r, err)
+		var httpErr *httpclient.HTTPError
+		if errors.As(err, &httpErr) {
+			app.errorResponse(w, r, httpErr)
+		} else {
+			app.serverErrorResponse(w, r, err)
+		}
 		return
 	}
 

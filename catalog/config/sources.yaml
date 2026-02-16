@@ -1,0 +1,13 @@
+apiVersion: catalog/v1alpha1
+kind: CatalogSources
+catalogs:
+  mcp:
+    sources:
+      - id: mcp-default
+        name: "MCP Servers"
+        type: yaml
+        enabled: true
+        labels: ["MCP Servers"]
+        properties:
+          yamlCatalogPath: "../plugins/mcp/data/mcp-servers.yaml"
+          loaderConfigPath: "./mcp-loader-config.yaml"

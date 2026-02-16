@@ -14,6 +14,16 @@ type McpServer struct {
 	ToolCount                *int32                 `json:"toolCount,omitempty"`
 	ResourceCount            *int32                 `json:"resourceCount,omitempty"`
 	PromptCount              *int32                 `json:"promptCount,omitempty"`
+	DeploymentMode           string                 `json:"deploymentMode,omitempty"`
+	Image                    string                 `json:"image,omitempty"`
+	Endpoint                 string                 `json:"endpoint,omitempty"`
+	SupportedTransports      string                 `json:"supportedTransports,omitempty"`
+	License                  string                 `json:"license,omitempty"`
+	Verified                 *bool                  `json:"verified,omitempty"`
+	Certified                *bool                  `json:"certified,omitempty"`
+	Provider                 string                 `json:"provider,omitempty"`
+	Logo                     string                 `json:"logo,omitempty"`
+	Category                 string                 `json:"category,omitempty"`
 }
 
 // McpServerList is a paginated list of McpServer entities.

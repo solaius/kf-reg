@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -30,6 +31,9 @@ type Server struct {
 	plugins       []CatalogPlugin
 	failedPlugins []failedPlugin
 	roleExtractor RoleExtractor
+	configStore   ConfigStore
+	configVersion string // hash from last ConfigStore.Load
+	rateLimiter   *RefreshRateLimiter
 	mu            sync.RWMutex
 }
 
@@ -40,6 +44,15 @@ type ServerOption func(*Server)
 func WithRoleExtractor(extractor RoleExtractor) ServerOption {
 	return func(s *Server) {
 		s.roleExtractor = extractor
+	}
+}
+
+// WithConfigStore sets a ConfigStore for persistent config management.
+// When set, the server will load config from the store during Init and
+// management handlers will persist mutations back to the store.
+func WithConfigStore(store ConfigStore) ServerOption {
+	return func(s *Server) {
+		s.configStore = store
 	}
 }
 
@@ -57,6 +70,7 @@ func NewServer(cfg *CatalogSourcesConfig, configPaths []string, db *gorm.DB, log
 		plugins:       make([]CatalogPlugin, 0),
 		failedPlugins: make([]failedPlugin, 0),
 		roleExtractor: DefaultRoleExtractor,
+		rateLimiter:   NewRefreshRateLimiter(30 * time.Second),
 	}
 
 	for _, opt := range opts {
@@ -67,9 +81,23 @@ func NewServer(cfg *CatalogSourcesConfig, configPaths []string, db *gorm.DB, log
 }
 
 // Init initializes all registered plugins that have configuration.
+// If a ConfigStore is set, the config is loaded from it (overriding the
+// config passed to NewServer).
 func (s *Server) Init(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// Load config from store if available.
+	if s.configStore != nil {
+		cfg, version, err := s.configStore.Load(ctx)
+		if err != nil {
+			s.logger.Error("failed to load config from store, using initial config", "error", err)
+		} else {
+			s.config = cfg
+			s.configVersion = version
+			s.logger.Info("loaded config from store", "version", version)
+		}
+	}
 
 	for _, p := range All() {
 		// Use SourceKey if the plugin provides one, otherwise fall back to plugin name
@@ -161,7 +189,7 @@ func (s *Server) MountRoutes() chi.Router {
 			_, hasRP := p.(RefreshProvider)
 			_, hasDP := p.(DiagnosticsProvider)
 			if hasSM || hasRP || hasDP {
-				mgmtRouter := managementRouter(p, s.roleExtractor)
+				mgmtRouter := managementRouter(p, s.roleExtractor, s)
 				r.Mount("/", mgmtRouter)
 				s.logger.Info("mounted management routes", "plugin", p.Name(),
 					"sourceManager", hasSM, "refresh", hasRP, "diagnostics", hasDP)
@@ -274,6 +302,195 @@ func (s *Server) readyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = json.NewEncoder(w).Encode(response)
+}
+
+// ConfigVersion returns the current config version hash. Empty if no ConfigStore is set.
+func (s *Server) ConfigVersion() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.configVersion
+}
+
+// Config returns a copy of the current config.
+func (s *Server) Config() *CatalogSourcesConfig {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.config
+}
+
+// ConfigStore returns the server's ConfigStore, or nil if not set.
+func (s *Server) GetConfigStore() ConfigStore {
+	return s.configStore
+}
+
+// persistConfig saves the current in-memory config to the ConfigStore using
+// optimistic concurrency. It updates the in-memory configVersion on success.
+// Returns the new version on success, or an error (including ErrVersionConflict).
+func (s *Server) persistConfig(ctx context.Context) (string, error) {
+	if s.configStore == nil {
+		return "", nil
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	newVersion, err := s.configStore.Save(ctx, s.config, s.configVersion)
+	if err != nil {
+		return "", err
+	}
+	s.configVersion = newVersion
+	return newVersion, nil
+}
+
+// updateConfigSource updates a single source in the in-memory config for a
+// given plugin config key. If the source ID exists, it is replaced; otherwise
+// it is appended.
+func (s *Server) updateConfigSource(configKey string, src SourceConfig) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	section := s.config.Catalogs[configKey]
+	found := false
+	for i, existing := range section.Sources {
+		if existing.ID == src.ID {
+			section.Sources[i] = src
+			found = true
+			break
+		}
+	}
+	if !found {
+		section.Sources = append(section.Sources, src)
+	}
+	s.config.Catalogs[configKey] = section
+}
+
+// enableConfigSource updates the enabled state of a source in the in-memory config.
+func (s *Server) enableConfigSource(configKey, sourceID string, enabled bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	section := s.config.Catalogs[configKey]
+	for i, src := range section.Sources {
+		if src.ID == sourceID {
+			section.Sources[i].Enabled = &enabled
+			break
+		}
+	}
+	s.config.Catalogs[configKey] = section
+}
+
+// deleteConfigSource removes a source from the in-memory config.
+func (s *Server) deleteConfigSource(configKey, sourceID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	section := s.config.Catalogs[configKey]
+	filtered := make([]SourceConfig, 0, len(section.Sources))
+	for _, src := range section.Sources {
+		if src.ID != sourceID {
+			filtered = append(filtered, src)
+		}
+	}
+	section.Sources = filtered
+	s.config.Catalogs[configKey] = section
+}
+
+// ReconcileLoop periodically checks the ConfigStore for external changes and
+// re-initializes affected plugins. It runs until the context is cancelled.
+func (s *Server) ReconcileLoop(ctx context.Context) {
+	if s.configStore == nil {
+		s.logger.Info("no config store set, reconcile loop disabled")
+		return
+	}
+
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	s.logger.Info("config reconcile loop started", "interval", "30s")
+
+	for {
+		select {
+		case <-ctx.Done():
+			s.logger.Info("config reconcile loop stopped")
+			return
+		case <-ticker.C:
+			s.reconcileOnce(ctx)
+		}
+	}
+}
+
+// reconcileOnce performs a single reconciliation check.
+func (s *Server) reconcileOnce(ctx context.Context) {
+	cfg, version, err := s.configStore.Load(ctx)
+	if err != nil {
+		s.logger.Error("reconcile: failed to load config", "error", err)
+		return
+	}
+
+	s.mu.RLock()
+	currentVersion := s.configVersion
+	s.mu.RUnlock()
+
+	if version == currentVersion {
+		return
+	}
+
+	s.logger.Info("reconcile: config changed externally, updating",
+		"oldVersion", currentVersion, "newVersion", version)
+
+	s.mu.Lock()
+	s.config = cfg
+	s.configVersion = version
+	s.mu.Unlock()
+
+	// Re-initialize plugins with the new config.
+	// We use a best-effort approach: re-init each plugin individually.
+	for _, p := range s.Plugins() {
+		configKey := p.Name()
+		if skp, ok := p.(SourceKeyProvider); ok {
+			configKey = skp.SourceKey()
+		}
+
+		section, ok := cfg.Catalogs[configKey]
+		if !ok {
+			section = CatalogSection{}
+		}
+
+		var basePath string
+		if bp, ok := p.(BasePathProvider); ok {
+			basePath = bp.BasePath()
+		} else {
+			basePath = fmt.Sprintf("/api/%s_catalog/%s", p.Name(), p.Version())
+		}
+
+		var configPaths []string
+		if ok {
+			s.mu.RLock()
+			configPaths = s.configPaths
+			s.mu.RUnlock()
+		}
+
+		pluginCfg := Config{
+			Section:     section,
+			DB:          s.db,
+			Logger:      s.logger.With("plugin", p.Name()),
+			BasePath:    basePath,
+			ConfigPaths: configPaths,
+		}
+
+		s.logger.Info("reconcile: re-initializing plugin", "plugin", p.Name())
+		if err := p.Init(ctx, pluginCfg); err != nil {
+			s.logger.Error("reconcile: plugin re-init failed", "plugin", p.Name(), "error", err)
+		}
+	}
+}
+
+// pluginConfigKey returns the config key for a given plugin.
+func pluginConfigKey(p CatalogPlugin) string {
+	if skp, ok := p.(SourceKeyProvider); ok {
+		return skp.SourceKey()
+	}
+	return p.Name()
 }
 
 // pluginsHandler returns information about registered plugins.

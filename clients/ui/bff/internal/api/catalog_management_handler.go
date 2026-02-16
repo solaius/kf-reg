@@ -35,7 +35,12 @@ func (app *App) GetPluginSourcesHandler(w http.ResponseWriter, r *http.Request, 
 
 	sourceList, err := app.repositories.ModelCatalogClient.GetPluginSources(client, basePath)
 	if err != nil {
-		app.serverErrorResponse(w, r, err)
+		var httpErr *httpclient.HTTPError
+		if errors.As(err, &httpErr) {
+			app.errorResponse(w, r, httpErr)
+		} else {
+			app.serverErrorResponse(w, r, err)
+		}
 		return
 	}
 
@@ -305,7 +310,12 @@ func (app *App) GetPluginDiagnosticsHandler(w http.ResponseWriter, r *http.Reque
 
 	diagnostics, err := app.repositories.ModelCatalogClient.GetPluginDiagnostics(client, basePath)
 	if err != nil {
-		app.serverErrorResponse(w, r, err)
+		var httpErr *httpclient.HTTPError
+		if errors.As(err, &httpErr) {
+			app.errorResponse(w, r, httpErr)
+		} else {
+			app.serverErrorResponse(w, r, err)
+		}
 		return
 	}
 

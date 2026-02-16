@@ -159,6 +159,7 @@ func TestParseMcpServerCatalogMinimal(t *testing.T) {
 mcpservers:
   - name: "minimal-server"
     serverUrl: "https://mcp.example.com/minimal"
+    deploymentMode: "remote"
 `)
 
 	records, err := parseMcpServerCatalog(data, nil)
@@ -180,7 +181,7 @@ mcpservers:
 		t.Fatal("expected properties on entity")
 	}
 
-	// Should have serverUrl but not optional properties
+	// Should have serverUrl and deploymentMode but not optional properties
 	hasServerUrl := false
 	hasTransportType := false
 	hasDeploymentMode := false
@@ -203,8 +204,8 @@ mcpservers:
 	if hasTransportType {
 		t.Error("did not expect transportType property for minimal record")
 	}
-	if hasDeploymentMode {
-		t.Error("did not expect deploymentMode property for minimal record")
+	if !hasDeploymentMode {
+		t.Error("expected deploymentMode property")
 	}
 	if hasProvider {
 		t.Error("did not expect provider property for minimal record")
@@ -226,11 +227,54 @@ mcpservers: []
 	}
 }
 
+func TestParseMcpServerCatalogValidationErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		data string
+	}{
+		{
+			name: "missing name",
+			data: `
+mcpservers:
+  - serverUrl: "https://mcp.example.com"
+    deploymentMode: "remote"
+`,
+		},
+		{
+			name: "missing deploymentMode",
+			data: `
+mcpservers:
+  - name: "test-server"
+    serverUrl: "https://mcp.example.com"
+`,
+		},
+		{
+			name: "invalid deploymentMode",
+			data: `
+mcpservers:
+  - name: "test-server"
+    serverUrl: "https://mcp.example.com"
+    deploymentMode: "invalid"
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := parseMcpServerCatalog([]byte(tt.data), nil)
+			if err == nil {
+				t.Errorf("expected validation error for %s, got nil", tt.name)
+			}
+		})
+	}
+}
+
 func TestParseMcpServerCatalogWithCustomProperties(t *testing.T) {
 	data := []byte(`
 mcpservers:
   - name: "custom-server"
     serverUrl: "https://mcp.example.com/custom"
+    deploymentMode: "remote"
     customProperties:
       team: "platform"
       version: "1.0"

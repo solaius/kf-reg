@@ -27,6 +27,7 @@ func main() {
 	flag.BoolVar(&cfg.MockK8Client, "mock-k8s-client", false, "Use mock Kubernetes client")
 	flag.BoolVar(&cfg.MockMRClient, "mock-mr-client", false, "Use mock Model Registry client")
 	flag.BoolVar(&cfg.MockMRCatalogClient, "mock-mr-catalog-client", false, "Use mock Model Registry Catalog client")
+	flag.StringVar(&cfg.CatalogServerURL, "catalog-server-url", getEnvAsString("CATALOG_SERVER_BASE_URL", ""), "Base URL of the catalog-server (env: CATALOG_SERVER_BASE_URL)")
 	flag.BoolVar(&cfg.DevMode, "dev-mode", false, "Use development mode for access to local K8s cluster")
 	flag.IntVar(&cfg.DevModeModelRegistryPort, "dev-mode-model-registry-port", getEnvAsInt("DEV_MODE_MODEL_REGISTRY_PORT", 8080), "Use port when in development mode for model registry")
 	flag.IntVar(&cfg.DevModeCatalogPort, "dev-mode-catalog-port", getEnvAsInt("DEV_MODE_CATALOG_PORT", 8081), "Use port when in development mode for catalog")
@@ -72,6 +73,12 @@ func main() {
 	//validate auth method
 	if cfg.AuthMethod != config.AuthMethodInternal && cfg.AuthMethod != config.AuthMethodUser {
 		logger.Error("invalid auth method: (must be internal or user_token)", "authMethod", cfg.AuthMethod)
+		os.Exit(1)
+	}
+
+	// Fail fast: in real mode (no mock), catalog-server URL is required
+	if !cfg.MockMRCatalogClient && cfg.CatalogServerURL == "" {
+		logger.Error("CATALOG_SERVER_BASE_URL is required in real mode; use --mock-mr-catalog-client for dev mode")
 		os.Exit(1)
 	}
 

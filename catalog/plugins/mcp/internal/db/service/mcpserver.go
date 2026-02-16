@@ -116,6 +116,22 @@ func (r *McpServerRepositoryImpl) GetDistinctSourceIDs() ([]string, error) {
 	return sourceIDs, nil
 }
 
+// CountBySource counts entities with the given source ID.
+func (r *McpServerRepositoryImpl) CountBySource(sourceID string) (int, error) {
+	config := r.GetConfig()
+	var count int64
+
+	query := `SELECT COUNT(DISTINCT "Context".id) FROM "Context"
+		INNER JOIN "ContextProperty" ON "Context".id="ContextProperty".context_id
+			AND "ContextProperty".name='source_id'
+			AND "ContextProperty".string_value=?
+		WHERE "Context".type_id=?`
+	if err := config.DB.Raw(query, sourceID, config.TypeID).Scan(&count).Error; err != nil {
+		return 0, fmt.Errorf("error counting entities by source: %w", err)
+	}
+	return int(count), nil
+}
+
 func mapMcpServerToContext(entity models.McpServer) schema.Context {
 	ctx := schema.Context{}
 	if entity.GetID() != nil {

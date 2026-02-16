@@ -1,0 +1,61 @@
+mcpServers:
+  - name: kubernetes
+    displayName: Kubernetes
+    deploymentMode: local
+    imageUri: quay.io/mcp-servers/kubernetes-mcp
+    transports: ["http-streaming", "sse"]
+    license: Apache-2.0
+    labels: ["cluster-management"]
+    verification:
+      verifiedSource: true
+      sast: true
+  - name: openshift
+    displayName: OpenShift
+    deploymentMode: local
+    imageUri: quay.io/mcp-servers/openshift-mcp
+    transports: ["http-streaming", "sse"]
+    license: Apache-2.0
+    labels: ["cluster-management"]
+    verification:
+      verifiedSource: true
+      sast: true
+  - name: ansible
+    displayName: Ansible
+    deploymentMode: local
+    imageUri: quay.io/mcp-servers/ansible-mcp
+    transports: ["http-streaming", "sse"]
+    license: Apache-2.0
+    labels: ["automation"]
+    verification:
+      verifiedSource: false
+      sast: false
+  - name: postgres
+    displayName: PostgreSQL
+    deploymentMode: local
+    imageUri: quay.io/mcp-servers/edb-postgres-mcp
+    transports: ["http-streaming", "sse"]
+    license: Apache-2.0
+    labels: ["databases"]
+    verification:
+      verifiedSource: true
+      sast: true
+  - name: github
+    displayName: GitHub
+    deploymentMode: remote
+    remoteUrl: https://api.githubcopilot.com/mcp
+    transports: ["http-streaming"]
+    license: MIT
+    labels: ["chatops", "collaboration"]
+    verification:
+      verifiedSource: false
+      sast: false
+  - name: jira
+    displayName: Jira
+    deploymentMode: remote
+    remoteUrl: https://jira.example.com/mcp
+    transports: ["http-streaming"]
+    license: Apache-2.0
+    labels: ["automation", "collaboration"]
+    verification:
+      verifiedSource: false
+      sast: false

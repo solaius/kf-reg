@@ -8,6 +8,10 @@ import {
   BreadcrumbItem,
   Button,
   Checkbox,
+  DescriptionList,
+  DescriptionListDescription,
+  DescriptionListGroup,
+  DescriptionListTerm,
   EmptyState,
   EmptyStateBody,
   EmptyStateVariant,
@@ -17,6 +21,8 @@ import {
   FormHelperText,
   HelperText,
   HelperTextItem,
+  Label,
+  LabelGroup,
   PageSection,
   Radio,
   Sidebar,
@@ -27,13 +33,11 @@ import {
   TextInput,
   Title,
 } from '@patternfly/react-core';
-import { CubesIcon } from '@patternfly/react-icons';
+import { CubesIcon, FileCodeIcon } from '@patternfly/react-icons';
+import './PluginSourceConfigPage.css';
 import { useNavigate, useParams } from 'react-router-dom';
 import { CatalogManagementContext } from '~/app/context/catalogManagement/CatalogManagementContext';
-import {
-  catalogManagementUrl,
-  catalogPluginSourcesUrl,
-} from '~/app/routes/catalogManagement/catalogManagement';
+import { catalogPluginSourcesUrl } from '~/app/routes/catalogManagement/catalogManagement';
 
 const PLUGIN_LABELS: Record<string, { entityLabel: string; catalogLabel: string; description: string }> = {
   model: {
@@ -69,6 +73,9 @@ const PluginSourceConfigPage: React.FC = () => {
   const [submitting, setSubmitting] = React.useState(false);
   const [submitError, setSubmitError] = React.useState<string | undefined>();
   const [sourceLoaded, setSourceLoaded] = React.useState(!isManageMode);
+  const [yamlCatalogPath, setYamlCatalogPath] = React.useState<string | undefined>();
+  const [sourceLabels, setSourceLabels] = React.useState<string[]>([]);
+  const [entityCount, setEntityCount] = React.useState(0);
 
   React.useEffect(() => {
     if (!isManageMode || !apiState.apiAvailable || !pluginName) {
@@ -82,10 +89,19 @@ const PluginSourceConfigPage: React.FC = () => {
           setSourceName(source.name);
           setSourceType(source.type);
           setVisibleInCatalog(source.enabled);
+          setEntityCount(source.status?.entityCount || 0);
+          if (source.labels) {
+            setSourceLabels(source.labels);
+          }
           // Load YAML content from properties
           const content = source.properties?.content;
           if (typeof content === 'string') {
             setYamlContent(content);
+          }
+          // Track the YAML catalog path for file-based sources
+          const catalogPath = source.properties?.yamlCatalogPath;
+          if (typeof catalogPath === 'string') {
+            setYamlCatalogPath(catalogPath);
           }
         }
         setSourceLoaded(true);
@@ -102,12 +118,20 @@ const PluginSourceConfigPage: React.FC = () => {
     setSubmitting(true);
     setSubmitError(undefined);
     try {
+      const properties: Record<string, string> = {};
+      if (yamlContent) {
+        properties.content = yamlContent;
+      }
+      if (yamlCatalogPath) {
+        properties.yamlCatalogPath = yamlCatalogPath;
+      }
+
       const payload = {
         id: isManageMode && sourceId ? sourceId : sourceName.toLowerCase().replace(/\s+/g, '-'),
         name: sourceName,
         type: sourceType,
         enabled: visibleInCatalog,
-        properties: yamlContent ? { content: yamlContent } : undefined,
+        properties: Object.keys(properties).length > 0 ? properties : undefined,
       };
       await apiState.api.applyPluginSource({}, pluginName, payload);
       navigate(catalogPluginSourcesUrl(pluginName));
@@ -116,7 +140,7 @@ const PluginSourceConfigPage: React.FC = () => {
     } finally {
       setSubmitting(false);
     }
-  }, [apiState, pluginName, sourceName, sourceType, yamlContent, visibleInCatalog, isManageMode, sourceId, navigate]);
+  }, [apiState, pluginName, sourceName, sourceType, yamlContent, yamlCatalogPath, visibleInCatalog, isManageMode, sourceId, navigate]);
 
   const handleFileChange = (
     _event: React.DragEvent<HTMLElement> | React.ChangeEvent<HTMLInputElement> | Event,
@@ -186,6 +210,7 @@ const PluginSourceConfigPage: React.FC = () => {
                   <FormGroup label="Name" isRequired fieldId="source-name">
                     <TextInput
                       id="source-name"
+                      type="text"
                       isRequired
                       value={sourceName}
                       onChange={(_event, value) => setSourceName(value)}
@@ -220,29 +245,43 @@ const PluginSourceConfigPage: React.FC = () => {
                 {sourceType === 'yaml' && (
                   <StackItem>
                     <FormGroup
-                      label="Upload a YAML file"
-                      isRequired
+                      label={isManageMode ? 'YAML content' : 'Upload a YAML file'}
+                      isRequired={!isManageMode}
                       fieldId="yaml-content"
                     >
-                      <FileUpload
-                        id="yaml-content"
-                        data-testid="yaml-content-input"
-                        type="text"
-                        value={yamlContent}
-                        filename={yamlFilename}
-                        filenamePlaceholder="Drag and drop a YAML file or upload one"
-                        onFileInputChange={handleFileChange}
-                        onTextChange={handleTextChange}
-                        onClearClick={handleClearFile}
-                        browseButtonText="Upload"
-                        allowEditingUploadedText
-                        dropzoneProps={{
-                          accept: { 'text/yaml': ['.yaml', '.yml'] },
-                        }}
-                      />
+                      {yamlCatalogPath && (
+                        <div className="pf-v6-u-mb-sm">
+                          <Label icon={<FileCodeIcon />} color="blue">
+                            {yamlCatalogPath}
+                          </Label>
+                        </div>
+                      )}
+                      <div className="plugin-source-config__yaml-upload">
+                        <FileUpload
+                          id="yaml-content"
+                          data-testid="yaml-content-input"
+                          type="text"
+                          value={yamlContent}
+                          filename={yamlFilename}
+                          filenamePlaceholder="Drag and drop a YAML file or upload one"
+                          onFileInputChange={handleFileChange}
+                          onTextChange={handleTextChange}
+                          onClearClick={handleClearFile}
+                          browseButtonText="Upload"
+                          allowEditingUploadedText
+                          isLoading={isManageMode && !yamlContent && !sourceLoaded}
+                          dropzoneProps={{
+                            accept: { 'text/yaml': ['.yaml', '.yml'] },
+                          }}
+                        />
+                      </div>
                       <FormHelperText>
                         <HelperText>
-                          <HelperTextItem>Upload or paste a YAML string.</HelperTextItem>
+                          <HelperTextItem>
+                            {isManageMode
+                              ? 'Edit the YAML content and save to update the source.'
+                              : 'Upload or paste a YAML string.'}
+                          </HelperTextItem>
                         </HelperText>
                       </FormHelperText>
                     </FormGroup>
@@ -268,20 +307,72 @@ const PluginSourceConfigPage: React.FC = () => {
           </SidebarContent>
           <SidebarPanel width={{ default: 'width_50' }}>
             <div data-testid="preview-panel" className="pf-v6-u-h-100">
-              <Title headingLevel="h2" size="lg" className="pf-v6-u-mb-md">
-                {labels.catalogLabel} preview
-              </Title>
-              <EmptyState
-                icon={CubesIcon}
-                titleText={`Preview ${labels.entityLabel}`}
-                variant={EmptyStateVariant.sm}
-              >
-                <EmptyStateBody>
-                  To view the {labels.entityLabel} from this source that will appear in the{' '}
-                  {labels.catalogLabel.toLowerCase()} with your current configuration, complete all
-                  required fields, then click <strong>Preview</strong>.
-                </EmptyStateBody>
-              </EmptyState>
+              {isManageMode ? (
+                <>
+                  <Title headingLevel="h2" size="lg" className="pf-v6-u-mb-md">
+                    Source details
+                  </Title>
+                  <DescriptionList isHorizontal>
+                    <DescriptionListGroup>
+                      <DescriptionListTerm>Status</DescriptionListTerm>
+                      <DescriptionListDescription>
+                        <Label color={visibleInCatalog ? 'green' : 'grey'}>
+                          {visibleInCatalog ? 'Enabled' : 'Disabled'}
+                        </Label>
+                      </DescriptionListDescription>
+                    </DescriptionListGroup>
+                    <DescriptionListGroup>
+                      <DescriptionListTerm>Source type</DescriptionListTerm>
+                      <DescriptionListDescription>
+                        <Label color="blue">{sourceType}</Label>
+                      </DescriptionListDescription>
+                    </DescriptionListGroup>
+                    <DescriptionListGroup>
+                      <DescriptionListTerm>Entities</DescriptionListTerm>
+                      <DescriptionListDescription>
+                        {entityCount} {labels.entityLabel}
+                      </DescriptionListDescription>
+                    </DescriptionListGroup>
+                    {sourceLabels.length > 0 && (
+                      <DescriptionListGroup>
+                        <DescriptionListTerm>Labels</DescriptionListTerm>
+                        <DescriptionListDescription>
+                          <LabelGroup>
+                            {sourceLabels.map((lbl) => (
+                              <Label key={lbl}>{lbl}</Label>
+                            ))}
+                          </LabelGroup>
+                        </DescriptionListDescription>
+                      </DescriptionListGroup>
+                    )}
+                    {sourceId && (
+                      <DescriptionListGroup>
+                        <DescriptionListTerm>Source ID</DescriptionListTerm>
+                        <DescriptionListDescription>
+                          <code>{sourceId}</code>
+                        </DescriptionListDescription>
+                      </DescriptionListGroup>
+                    )}
+                  </DescriptionList>
+                </>
+              ) : (
+                <>
+                  <Title headingLevel="h2" size="lg" className="pf-v6-u-mb-md">
+                    {labels.catalogLabel} preview
+                  </Title>
+                  <EmptyState
+                    icon={CubesIcon}
+                    titleText={`Preview ${labels.entityLabel}`}
+                    variant={EmptyStateVariant.sm}
+                  >
+                    <EmptyStateBody>
+                      To view the {labels.entityLabel} from this source that will appear in the{' '}
+                      {labels.catalogLabel.toLowerCase()} with your current configuration, complete
+                      all required fields, then click <strong>Preview</strong>.
+                    </EmptyStateBody>
+                  </EmptyState>
+                </>
+              )}
             </div>
           </SidebarPanel>
         </Sidebar>

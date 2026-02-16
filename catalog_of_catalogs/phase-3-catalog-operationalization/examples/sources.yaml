@@ -1,0 +1,19 @@
+apiVersion: catalog.kubeflow.org/v1alpha1
+kind: CatalogSources
+catalogs:
+  models:
+    sources:
+      - id: "huggingface"
+        type: "hf"
+        enabled: true
+        properties:
+          apiKeyEnvVar: "HF_API_KEY"
+        includedModels:
+          - "meta-llama/Llama-3.1-8B-Instruct"
+  mcp:
+    sources:
+      - id: "core-mcp"
+        type: "yaml"
+        enabled: true
+        properties:
+          yamlCatalogPath: "./data/mcp-servers.yaml"

@@ -123,6 +123,48 @@ func convertToOpenAPIModel(entity models.McpServer) McpServer {
 					v := *prop.IntValue
 					result.PromptCount = &v
 				}
+			case "deploymentMode":
+				if prop.StringValue != nil {
+					result.DeploymentMode = *prop.StringValue
+				}
+			case "image":
+				if prop.StringValue != nil {
+					result.Image = *prop.StringValue
+				}
+			case "endpoint":
+				if prop.StringValue != nil {
+					result.Endpoint = *prop.StringValue
+				}
+			case "supportedTransports":
+				if prop.StringValue != nil {
+					result.SupportedTransports = *prop.StringValue
+				}
+			case "license":
+				if prop.StringValue != nil {
+					result.License = *prop.StringValue
+				}
+			case "verified":
+				if prop.BoolValue != nil {
+					v := *prop.BoolValue
+					result.Verified = &v
+				}
+			case "certified":
+				if prop.BoolValue != nil {
+					v := *prop.BoolValue
+					result.Certified = &v
+				}
+			case "provider":
+				if prop.StringValue != nil {
+					result.Provider = *prop.StringValue
+				}
+			case "logo":
+				if prop.StringValue != nil {
+					result.Logo = *prop.StringValue
+				}
+			case "category":
+				if prop.StringValue != nil {
+					result.Category = *prop.StringValue
+				}
 			}
 		}
 	}

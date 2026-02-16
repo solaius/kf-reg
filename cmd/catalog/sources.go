@@ -66,6 +66,7 @@ func newSourcesCmd() *cobra.Command {
 	cmd.AddCommand(newSourcesEnableCmd())
 	cmd.AddCommand(newSourcesDisableCmd())
 	cmd.AddCommand(newSourcesDeleteCmd())
+	cmd.AddCommand(newSourcesDiagnosticsCmd())
 
 	return cmd
 }
@@ -416,5 +417,102 @@ func runSourcesDelete(plugin, version, sourceID string) error {
 
 	var raw json.RawMessage = body
 	return printOutput(os.Stdout, format, raw, nil, nil)
+}
+
+// --- sources diagnostics ---
+
+func newSourcesDiagnosticsCmd() *cobra.Command {
+	var (
+		plugin     string
+		apiVersion string
+		sourceID   string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "diagnostics",
+		Short: "Show source diagnostics for a plugin",
+		Long:  "Show detailed diagnostics for all sources or a specific source within a plugin.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runSourcesDiagnostics(plugin, apiVersion, sourceID)
+		},
+	}
+
+	cmd.Flags().StringVar(&plugin, "plugin", "", "Plugin name (required)")
+	cmd.Flags().StringVar(&apiVersion, "api-version", "v1alpha1", "API version")
+	cmd.Flags().StringVar(&sourceID, "source", "", "Filter diagnostics to a specific source ID")
+	_ = cmd.MarkFlagRequired("plugin")
+
+	return cmd
+}
+
+func runSourcesDiagnostics(plugin, version, sourceID string) error {
+	path := fmt.Sprintf("/api/%s_catalog/%s/diagnostics", plugin, version)
+
+	body, err := globalClient.doRequest("GET", path, nil)
+	if err != nil {
+		return err
+	}
+
+	var diag pluginDiagnostics
+	if err := json.Unmarshal(body, &diag); err != nil {
+		return fmt.Errorf("parsing response: %w", err)
+	}
+
+	// Filter to specific source if requested
+	if sourceID != "" {
+		filtered := make([]sourceDiagnostic, 0)
+		for _, s := range diag.Sources {
+			if s.ID == sourceID {
+				filtered = append(filtered, s)
+			}
+		}
+		diag.Sources = filtered
+	}
+
+	format, err := parseOutputFormat(outputFlag)
+	if err != nil {
+		return err
+	}
+
+	if format == outputTable {
+		fmt.Fprintf(os.Stdout, "Plugin: %s\n", diag.PluginName)
+		if diag.LastRefresh != nil {
+			fmt.Fprintf(os.Stdout, "Last Refresh: %s\n", diag.LastRefresh.Format(time.RFC3339))
+		}
+		fmt.Fprintln(os.Stdout)
+
+		if len(diag.Sources) == 0 {
+			if sourceID != "" {
+				fmt.Fprintf(os.Stdout, "No diagnostics found for source %q\n", sourceID)
+			} else {
+				fmt.Fprintln(os.Stdout, "No sources configured")
+			}
+			return nil
+		}
+
+		headers := []string{"ID", "Name", "State", "Entities", "Last Refresh", "Error"}
+		var rows [][]string
+		for _, s := range diag.Sources {
+			lastRefresh := "-"
+			if s.LastRefreshTime != nil {
+				lastRefresh = s.LastRefreshTime.Format(time.RFC3339)
+			}
+			errMsg := "-"
+			if s.Error != "" {
+				errMsg = truncate(s.Error, 50)
+			}
+			rows = append(rows, []string{
+				s.ID,
+				s.Name,
+				s.State,
+				fmt.Sprintf("%d", s.EntityCount),
+				lastRefresh,
+				errMsg,
+			})
+		}
+		return printTable(os.Stdout, headers, rows)
+	}
+
+	return printOutput(os.Stdout, format, diag, nil, nil)
 }
 

@@ -103,6 +103,12 @@ type EnvConfig struct {
 	// Default is "Bearer ", can be set to empty if the token is sent without a prefix.
 	AuthTokenPrefix string
 
+	// ─── CATALOG SERVER ─────────────────────────────────────────
+	// CatalogServerURL is the base URL of the catalog-server.
+	// Required in real mode (when MockMRCatalogClient is false).
+	// Can be set via --catalog-server-url flag or CATALOG_SERVER_BASE_URL env var.
+	CatalogServerURL string
+
 	// ─── TLS ────────────────────────────────────────────────────
 	// TLS verification settings for HTTP client connections to Model Registry
 	// InsecureSkipVerify when true, skips TLS certificate verification (useful for development/local setups)

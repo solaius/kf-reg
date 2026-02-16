@@ -1,0 +1,4 @@
+.plugin-source-config__yaml-upload textarea {
+  resize: vertical !important;
+  min-height: 200px;
+}

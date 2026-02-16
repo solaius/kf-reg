@@ -8,7 +8,7 @@ import (
 	"github.com/kubeflow/model-registry/ui/bff/internal/models"
 )
 
-const pluginsPath = "/plugins"
+const pluginsPath = "/api/plugins"
 
 type CatalogPluginsInterface interface {
 	GetAllCatalogPlugins(client httpclient.HTTPClientInterface) (*models.CatalogPluginList, error)

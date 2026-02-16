@@ -24,13 +24,23 @@ func (app *App) GetMcpServersHandler(w http.ResponseWriter, r *http.Request, ps 
 	// Resolve MCP plugin base path
 	basePath, err := app.repositories.ModelCatalogClient.ResolvePluginBasePath(client, "mcp")
 	if err != nil {
-		app.serverErrorResponse(w, r, fmt.Errorf("error resolving MCP plugin base path: %w", err))
+		var httpErr *httpclient.HTTPError
+		if errors.As(err, &httpErr) {
+			app.errorResponse(w, r, httpErr)
+		} else {
+			app.serverErrorResponse(w, r, fmt.Errorf("error resolving MCP plugin base path: %w", err))
+		}
 		return
 	}
 
 	mcpServers, err := app.repositories.ModelCatalogClient.GetMcpServers(client, basePath)
 	if err != nil {
-		app.serverErrorResponse(w, r, err)
+		var httpErr *httpclient.HTTPError
+		if errors.As(err, &httpErr) {
+			app.errorResponse(w, r, httpErr)
+		} else {
+			app.serverErrorResponse(w, r, err)
+		}
 		return
 	}
 
@@ -54,13 +64,23 @@ func (app *App) GetMcpServerHandler(w http.ResponseWriter, r *http.Request, ps h
 
 	basePath, err := app.repositories.ModelCatalogClient.ResolvePluginBasePath(client, "mcp")
 	if err != nil {
-		app.serverErrorResponse(w, r, fmt.Errorf("error resolving MCP plugin base path: %w", err))
+		var httpErr *httpclient.HTTPError
+		if errors.As(err, &httpErr) {
+			app.errorResponse(w, r, httpErr)
+		} else {
+			app.serverErrorResponse(w, r, fmt.Errorf("error resolving MCP plugin base path: %w", err))
+		}
 		return
 	}
 
 	mcpServer, err := app.repositories.ModelCatalogClient.GetMcpServer(client, basePath, serverName)
 	if err != nil {
-		app.serverErrorResponse(w, r, err)
+		var httpErr *httpclient.HTTPError
+		if errors.As(err, &httpErr) {
+			app.errorResponse(w, r, httpErr)
+		} else {
+			app.serverErrorResponse(w, r, err)
+		}
 		return
 	}
 

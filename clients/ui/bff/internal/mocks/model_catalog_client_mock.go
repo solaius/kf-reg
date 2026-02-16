@@ -345,8 +345,7 @@ func (m *ModelCatalogClientMock) GetPluginSources(client httpclient.HTTPClientIn
 
 func (m *ModelCatalogClientMock) ValidatePluginSourceConfig(client httpclient.HTTPClientInterface, basePath string, payload models.SourceConfigPayload) (*models.ValidationResult, error) {
 	return &models.ValidationResult{
-		Valid:   true,
-		Message: "configuration is valid",
+		Valid: true,
 	}, nil
 }
 
@@ -433,25 +432,38 @@ func (m *ModelCatalogClientMock) DeletePluginSource(client httpclient.HTTPClient
 
 func (m *ModelCatalogClientMock) RefreshPlugin(client httpclient.HTTPClientInterface, basePath string) (*models.RefreshResult, error) {
 	return &models.RefreshResult{
-		Status:  "completed",
-		Message: "all sources refreshed",
+		EntitiesLoaded:  12,
+		EntitiesRemoved: 0,
+		Duration:        150,
 	}, nil
 }
 
 func (m *ModelCatalogClientMock) RefreshPluginSource(client httpclient.HTTPClientInterface, basePath string, sourceId string) (*models.RefreshResult, error) {
 	return &models.RefreshResult{
-		Status:   "completed",
-		Message:  "source refreshed",
-		SourceId: sourceId,
+		SourceId:        sourceId,
+		EntitiesLoaded:  5,
+		EntitiesRemoved: 0,
+		Duration:        80,
 	}, nil
 }
 
 func (m *ModelCatalogClientMock) GetPluginDiagnostics(client httpclient.HTTPClientInterface, basePath string) (*models.PluginDiagnostics, error) {
+	key := m.pluginKeyFromBasePath(basePath)
+	m.initPluginSources(key)
+
+	var sourceDiags []models.SourceDiagnostic
+	for _, s := range m.pluginSources[key] {
+		sourceDiags = append(sourceDiags, models.SourceDiagnostic{
+			Id:          s.Id,
+			Name:        s.Name,
+			State:       s.Status.State,
+			EntityCount: s.Status.EntityCount,
+		})
+	}
+
 	return &models.PluginDiagnostics{
-		PluginName:  "model",
-		Healthy:     true,
-		Version:     "v1alpha1",
-		SourceCount: 1,
+		PluginName: key,
+		Sources:    sourceDiags,
 	}, nil
 }
 

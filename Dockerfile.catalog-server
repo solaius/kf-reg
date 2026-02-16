@@ -1,0 +1,47 @@
+# Build the catalog-server binary
+FROM --platform=$BUILDPLATFORM golang:1.24 AS builder
+ARG TARGETOS
+ARG TARGETARCH
+
+WORKDIR /workspace
+
+# Copy Go module files for dependency caching
+COPY go.mod go.sum ./
+COPY pkg/openapi/go.mod pkg/openapi/
+COPY catalog/pkg/openapi/go.mod catalog/pkg/openapi/
+RUN go mod download
+
+# Copy source code
+COPY main.go ./
+COPY cmd/ cmd/
+COPY api/ api/
+COPY internal/ internal/
+COPY pkg/ pkg/
+COPY catalog/ catalog/
+COPY templates/ templates/
+COPY patches/ patches/
+COPY scripts/ scripts/
+COPY Makefile .
+
+# Build catalog-server binary
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -buildvcs=false -o catalog-server ./cmd/catalog-server
+
+# Build catalog CLI binary
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -buildvcs=false -o catalog-cli ./cmd/catalog
+
+# Runtime image
+FROM gcr.io/distroless/static:nonroot
+WORKDIR /
+
+COPY --from=builder /workspace/catalog-server .
+COPY --from=builder /workspace/catalog-cli .
+
+# Copy config and data files (preserve relative path structure for yamlCatalogPath resolution)
+COPY catalog/config/ /config/
+COPY catalog/plugins/mcp/data/ /plugins/mcp/data/
+
+USER 65532:65532
+
+EXPOSE 8080
+
+ENTRYPOINT ["/catalog-server"]

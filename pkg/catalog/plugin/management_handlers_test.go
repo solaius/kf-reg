@@ -128,7 +128,7 @@ func TestValidateHandler(t *testing.T) {
 
 func TestRefreshAllHandler(t *testing.T) {
 	p := &mgmtTestPlugin{}
-	handler := refreshAllHandler(p)
+	handler := refreshAllHandler(p, nil, "test")
 
 	req := httptest.NewRequest("POST", "/refresh", nil)
 	rr := httptest.NewRecorder()
@@ -146,7 +146,7 @@ func TestRefreshSourceHandler(t *testing.T) {
 	p := &mgmtTestPlugin{}
 
 	r := chi.NewRouter()
-	r.Post("/refresh/{sourceId}", refreshSourceHandler(p))
+	r.Post("/refresh/{sourceId}", refreshSourceHandler(p, nil, "test"))
 
 	req := httptest.NewRequest("POST", "/refresh/src1", nil)
 	rr := httptest.NewRecorder()
@@ -182,7 +182,7 @@ func TestEnableHandler(t *testing.T) {
 	p := &mgmtTestPlugin{}
 
 	r := chi.NewRouter()
-	r.Post("/sources/{sourceId}/enable", enableHandler(p))
+	r.Post("/sources/{sourceId}/enable", enableHandler(p, nil, "test"))
 
 	body := `{"enabled": false}`
 	req := httptest.NewRequest("POST", "/sources/src1/enable", bytes.NewReader([]byte(body)))
@@ -203,7 +203,7 @@ func TestDeleteSourceHandler(t *testing.T) {
 	p := &mgmtTestPlugin{}
 
 	r := chi.NewRouter()
-	r.Delete("/sources/{sourceId}", deleteSourceHandler(p))
+	r.Delete("/sources/{sourceId}", deleteSourceHandler(p, nil, "test"))
 
 	req := httptest.NewRequest("DELETE", "/sources/src1", nil)
 	rr := httptest.NewRecorder()
@@ -221,7 +221,7 @@ func TestManagementRouterRBAC(t *testing.T) {
 	p := &testMgmtPlugin{}
 
 	r := chi.NewRouter()
-	mgmt := managementRouter(p, DefaultRoleExtractor)
+	mgmt := managementRouter(p, DefaultRoleExtractor, nil)
 	r.Mount("/", mgmt)
 
 	t.Run("viewer can list sources", func(t *testing.T) {

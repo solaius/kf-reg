@@ -104,7 +104,7 @@ const PluginDiagnosticsPage: React.FC = () => {
           </Tr>
         </Thead>
         <Tbody>
-          {diagnostics.sources.length === 0 ? (
+          {!diagnostics.sources || diagnostics.sources.length === 0 ? (
             <Tr>
               <Td colSpan={6}>No sources.</Td>
             </Tr>

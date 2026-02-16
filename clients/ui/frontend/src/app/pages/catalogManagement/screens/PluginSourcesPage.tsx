@@ -8,6 +8,7 @@ import {
   Toolbar,
   ToolbarContent,
   ToolbarItem,
+  Tooltip,
 } from '@patternfly/react-core';
 import { PlusCircleIcon, SyncIcon } from '@patternfly/react-icons';
 import {
@@ -61,9 +62,11 @@ const sourceTypeLabel = (type: string): string => {
   }
 };
 
+const READONLY_TOOLTIP = 'Operator role required';
+
 const PluginSourcesPage: React.FC = () => {
   const navigate = useNavigate();
-  const { apiState, selectedPlugin } = React.useContext(CatalogManagementContext);
+  const { apiState, selectedPlugin, isReadOnly } = React.useContext(CatalogManagementContext);
 
   const [sources, setSources] = React.useState<SourceInfo[]>([]);
   const [loaded, setLoaded] = React.useState(false);
@@ -168,6 +171,8 @@ const PluginSourcesPage: React.FC = () => {
   const getRowActions = (source: SourceInfo): IAction[] => [
     {
       title: 'Manage source',
+      isDisabled: isReadOnly,
+      tooltipProps: isReadOnly ? { content: READONLY_TOOLTIP } : undefined,
       onClick: () => {
         navigate(getManageSourceUrl(source.id));
       },
@@ -187,6 +192,8 @@ const PluginSourcesPage: React.FC = () => {
     { isSeparator: true },
     {
       title: 'Delete source',
+      isDisabled: isReadOnly,
+      tooltipProps: isReadOnly ? { content: READONLY_TOOLTIP } : undefined,
       onClick: () => setDeleteSource(source),
     },
   ];
@@ -197,28 +204,33 @@ const PluginSourcesPage: React.FC = () => {
         <ToolbarContent>
           {hasSourceManager && (
             <ToolbarItem>
-              <Button
-                variant="primary"
-                icon={<PlusCircleIcon />}
-                onClick={() => navigate(getAddSourceUrl())}
-                data-testid="add-source-button"
-              >
-                Add a source
-              </Button>
+              <Tooltip content={READONLY_TOOLTIP} trigger={isReadOnly ? 'mouseenter focus' : 'manual'}>
+                <Button
+                  variant="primary"
+                  icon={<PlusCircleIcon />}
+                  onClick={() => navigate(getAddSourceUrl())}
+                  isDisabled={isReadOnly}
+                  data-testid="add-source-button"
+                >
+                  Add a source
+                </Button>
+              </Tooltip>
             </ToolbarItem>
           )}
           {hasRefresh && (
             <ToolbarItem>
-              <Button
-                variant="secondary"
-                icon={<SyncIcon />}
-                onClick={handleRefreshAll}
-                isDisabled={refreshing}
-                isLoading={refreshing}
-                data-testid="refresh-all-button"
-              >
-                Refresh all sources
-              </Button>
+              <Tooltip content={READONLY_TOOLTIP} trigger={isReadOnly ? 'mouseenter focus' : 'manual'}>
+                <Button
+                  variant="secondary"
+                  icon={<SyncIcon />}
+                  onClick={handleRefreshAll}
+                  isDisabled={refreshing || isReadOnly}
+                  isLoading={refreshing}
+                  data-testid="refresh-all-button"
+                >
+                  Refresh all sources
+                </Button>
+              </Tooltip>
             </ToolbarItem>
           )}
         </ToolbarContent>
@@ -263,13 +275,16 @@ const PluginSourcesPage: React.FC = () => {
                   <Td dataLabel="Source name">{source.name}</Td>
                   <Td dataLabel="Source type">{sourceTypeLabel(source.type)}</Td>
                   <Td dataLabel="Visible in catalog">
-                    <Switch
-                      id={`toggle-${source.id}`}
-                      aria-label={`Toggle visibility for ${source.name}`}
-                      isChecked={source.enabled}
-                      onChange={(_event, checked) => handleToggleEnable(source, checked)}
-                      data-testid={`toggle-enable-${source.id}`}
-                    />
+                    <Tooltip content={READONLY_TOOLTIP} trigger={isReadOnly ? 'mouseenter focus' : 'manual'}>
+                      <Switch
+                        id={`toggle-${source.id}`}
+                        aria-label={`Toggle visibility for ${source.name}`}
+                        isChecked={source.enabled}
+                        isDisabled={isReadOnly}
+                        onChange={(_event, checked) => handleToggleEnable(source, checked)}
+                        data-testid={`toggle-enable-${source.id}`}
+                      />
+                    </Tooltip>
                   </Td>
                   <Td dataLabel="Status">
                     <Label color={statusLabelColor(source.status.state)}>

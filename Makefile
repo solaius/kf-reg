@@ -472,6 +472,44 @@ compose/clean: ## Remove all Docker Compose volumes and networks
 	$(COMPOSE_CMD) down -v --remove-orphans
 	$(COMPOSE_CMD) -f docker-compose-local.yaml down -v --remove-orphans
 
+##@ E2E (Catalog Server)
+
+.PHONY: e2e
+e2e: ## Start the catalog E2E stack (PostgreSQL + catalog-server)
+	$(COMPOSE_CMD) -f docker-compose.catalog.yaml up --build -d
+	@echo ""
+	@echo "Catalog server: http://localhost:8080"
+	@echo "PostgreSQL:     localhost:5432 (catalog/catalog)"
+	@echo ""
+	@echo "Run 'make e2e-down' to stop."
+
+.PHONY: e2e-test
+e2e-test: ## Start E2E stack, wait for readiness, run smoke tests, then stop
+	$(COMPOSE_CMD) -f docker-compose.catalog.yaml up --build -d
+	@echo "Waiting for catalog-server to be ready..."
+	@for i in $$(seq 1 30); do \
+		if curl -sf http://localhost:8080/healthz > /dev/null 2>&1; then \
+			echo "catalog-server is ready"; \
+			break; \
+		fi; \
+		if [ $$i -eq 30 ]; then \
+			echo "catalog-server did not become ready in time"; \
+			$(COMPOSE_CMD) -f docker-compose.catalog.yaml logs catalog-server; \
+			$(COMPOSE_CMD) -f docker-compose.catalog.yaml down -v; \
+			exit 1; \
+		fi; \
+		sleep 2; \
+	done
+	@echo "Running smoke tests..."
+	CATALOG_SERVER_URL=http://localhost:8080 $(GO) test ./tests/e2e/ -v -count=1 -timeout 120s; \
+	TEST_EXIT=$$?; \
+	$(COMPOSE_CMD) -f docker-compose.catalog.yaml down -v; \
+	exit $$TEST_EXIT
+
+.PHONY: e2e-down
+e2e-down: ## Stop the catalog E2E stack and remove volumes
+	$(COMPOSE_CMD) -f docker-compose.catalog.yaml down -v
+
 ##@ Tools
 
 KUBECTL ?= kubectl

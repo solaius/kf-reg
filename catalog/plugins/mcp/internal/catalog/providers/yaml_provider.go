@@ -86,11 +86,38 @@ func NewMcpServerYAMLProvider() pkgcatalog.ProviderFunc[models.McpServer, any] {
 	}
 }
 
+// validateMcpServer checks required fields and returns field-level error messages.
+func validateMcpServer(item yamlMcpServer, index int) error {
+	var errs []string
+	if item.Name == "" {
+		errs = append(errs, fmt.Sprintf("entry %d: field 'name' is required", index))
+	}
+	if item.DeploymentMode == nil || *item.DeploymentMode == "" {
+		errs = append(errs, fmt.Sprintf("entry %d (%s): field 'deploymentMode' is required", index, item.Name))
+	} else {
+		mode := *item.DeploymentMode
+		if mode != "local" && mode != "remote" {
+			errs = append(errs, fmt.Sprintf("entry %d (%s): field 'deploymentMode' must be 'local' or 'remote', got %q", index, item.Name, mode))
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("validation failed: %s", fmt.Sprintf("%v", errs))
+	}
+	return nil
+}
+
 // parseMcpServerCatalog parses the YAML catalog files into records.
 func parseMcpServerCatalog(catalogData, artifactsData []byte) ([]pkgcatalog.Record[models.McpServer, any], error) {
 	var entityCatalog yamlMcpServerCatalog
 	if err := k8syaml.UnmarshalStrict(catalogData, &entityCatalog); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse MCP server catalog YAML: %w", err)
+	}
+
+	// Validate all entries before processing
+	for i, item := range entityCatalog.McpServers {
+		if err := validateMcpServer(item, i); err != nil {
+			return nil, err
+		}
 	}
 
 	records := make([]pkgcatalog.Record[models.McpServer, any], 0, len(entityCatalog.McpServers))

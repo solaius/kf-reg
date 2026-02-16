@@ -42,6 +42,8 @@ export type CatalogManagementContextType = {
   pluginsLoadError?: Error;
   selectedPlugin: CatalogPluginInfo | undefined;
   setSelectedPlugin: (plugin: CatalogPluginInfo | undefined) => void;
+  /** When true, mutation actions (add/delete/enable/refresh) are disabled. Wire to RBAC when available. */
+  isReadOnly: boolean;
 };
 
 export const CatalogManagementContext = React.createContext<CatalogManagementContextType>({
@@ -53,6 +55,7 @@ export const CatalogManagementContext = React.createContext<CatalogManagementCon
   pluginsLoadError: undefined,
   selectedPlugin: undefined,
   setSelectedPlugin: () => undefined,
+  isReadOnly: false,
 });
 
 type CatalogManagementContextProviderProps = {
@@ -105,6 +108,10 @@ export const CatalogManagementContextProvider: React.FC<CatalogManagementContext
       });
   }, [apiState]);
 
+  // TODO: Wire isReadOnly to actual RBAC when available.
+  // For now, defaults to false (operator role / full access).
+  const isReadOnly = false;
+
   const contextValue = React.useMemo(
     () => ({
       apiState,
@@ -114,8 +121,9 @@ export const CatalogManagementContextProvider: React.FC<CatalogManagementContext
       pluginsLoadError,
       selectedPlugin,
       setSelectedPlugin,
+      isReadOnly,
     }),
-    [apiState, refreshAPIState, plugins, pluginsLoaded, pluginsLoadError, selectedPlugin],
+    [apiState, refreshAPIState, plugins, pluginsLoaded, pluginsLoadError, selectedPlugin, isReadOnly],
   );
 
   return (

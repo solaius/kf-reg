@@ -75,4 +75,5 @@ type McpServerRepository interface {
 	DeleteBySource(sourceID string) error
 	DeleteByID(id int32) error
 	GetDistinctSourceIDs() ([]string, error)
+	CountBySource(sourceID string) (int, error)
 }

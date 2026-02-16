@@ -20,6 +20,7 @@ var (
 	// Global flags
 	serverURL    string
 	outputFlag   string
+	roleFlag     string
 	globalClient *catalogClient
 )
 
@@ -55,6 +56,9 @@ func (c *catalogClient) doRequest(method, path string, body io.Reader) ([]byte, 
 		req.Header.Set("Content-Type", "application/json")
 	}
 	req.Header.Set("Accept", "application/json")
+	if roleFlag != "" {
+		req.Header.Set("X-Role", roleFlag)
+	}
 
 	c.logger.Debug("sending request", "method", method, "url", url)
 
@@ -108,12 +112,14 @@ The CLI communicates with the catalog-server HTTP API.`,
 	// Global flags
 	rootCmd.PersistentFlags().StringVar(&serverURL, "server", "http://localhost:8081", "Catalog server URL")
 	rootCmd.PersistentFlags().StringVarP(&outputFlag, "output", "o", "table", "Output format: table, json, yaml")
+	rootCmd.PersistentFlags().StringVar(&roleFlag, "role", "", "Role for RBAC (viewer, operator); sets X-Role header")
 
 	// Register subcommands
 	rootCmd.AddCommand(newPluginsCmd())
 	rootCmd.AddCommand(newSourcesCmd())
 	rootCmd.AddCommand(newRefreshCmd())
 	rootCmd.AddCommand(newStatusCmd())
+	rootCmd.AddCommand(newMcpCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)

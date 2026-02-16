@@ -22,7 +22,12 @@ func (app *App) GetAllCatalogPluginsHandler(w http.ResponseWriter, r *http.Reque
 	catalogPlugins, err := app.repositories.ModelCatalogClient.GetAllCatalogPlugins(client)
 
 	if err != nil {
-		app.serverErrorResponse(w, r, err)
+		var httpErr *httpclient.HTTPError
+		if errors.As(err, &httpErr) {
+			app.errorResponse(w, r, httpErr)
+		} else {
+			app.serverErrorResponse(w, r, err)
+		}
 		return
 	}
 

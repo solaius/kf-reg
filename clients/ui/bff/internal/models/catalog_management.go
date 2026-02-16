@@ -35,11 +35,16 @@ type SourceConfigPayload struct {
 	Properties map[string]interface{} `json:"properties,omitempty"`
 }
 
+// ValidationError describes a single validation problem.
+type ValidationError struct {
+	Field   string `json:"field,omitempty"`
+	Message string `json:"message"`
+}
+
 // ValidationResult represents the response from a source config validation.
 type ValidationResult struct {
-	Valid   bool     `json:"valid"`
-	Errors  []string `json:"errors,omitempty"`
-	Message string   `json:"message,omitempty"`
+	Valid  bool              `json:"valid"`
+	Errors []ValidationError `json:"errors,omitempty"`
 }
 
 // SourceEnableRequest represents the request to enable or disable a source.
@@ -49,18 +54,35 @@ type SourceEnableRequest struct {
 
 // RefreshResult represents the response from a refresh operation.
 type RefreshResult struct {
-	Status    string `json:"status"`
-	Message   string `json:"message,omitempty"`
-	SourceId  string `json:"sourceId,omitempty"`
-	ItemCount int    `json:"itemCount,omitempty"`
+	SourceId        string `json:"sourceId,omitempty"`
+	EntitiesLoaded  int    `json:"entitiesLoaded"`
+	EntitiesRemoved int    `json:"entitiesRemoved"`
+	Duration        int64  `json:"duration"`
+	Error           string `json:"error,omitempty"`
+}
+
+// SourceDiagnostic provides diagnostic information for a single source.
+type SourceDiagnostic struct {
+	Id                  string `json:"id"`
+	Name                string `json:"name"`
+	State               string `json:"state"`
+	EntityCount         int    `json:"entityCount"`
+	LastRefreshTime     string `json:"lastRefreshTime,omitempty"`
+	LastRefreshDuration int64  `json:"lastRefreshDuration,omitempty"`
+	Error               string `json:"error,omitempty"`
+}
+
+// DiagnosticError represents a diagnostic-level error.
+type DiagnosticError struct {
+	Source  string `json:"source,omitempty"`
+	Message string `json:"message"`
+	Time    string `json:"time"`
 }
 
 // PluginDiagnostics represents diagnostic information for a plugin.
 type PluginDiagnostics struct {
-	PluginName  string                 `json:"pluginName"`
-	Healthy     bool                   `json:"healthy"`
-	Uptime      string                 `json:"uptime,omitempty"`
-	Version     string                 `json:"version,omitempty"`
-	SourceCount int                    `json:"sourceCount,omitempty"`
-	Details     map[string]interface{} `json:"details,omitempty"`
+	PluginName  string             `json:"pluginName"`
+	Sources     []SourceDiagnostic `json:"sources"`
+	LastRefresh string             `json:"lastRefresh,omitempty"`
+	Errors      []DiagnosticError  `json:"errors,omitempty"`
 }

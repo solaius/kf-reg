@@ -29,16 +29,18 @@ import (
 
 func main() {
 	var (
-		listenAddr   string
-		sourcesPath  string
-		databaseType string
-		databaseDSN  string
+		listenAddr     string
+		sourcesPath    string
+		databaseType   string
+		databaseDSN    string
+		configStoreStr string
 	)
 
 	flag.StringVar(&listenAddr, "listen", ":8080", "Address to listen on")
 	flag.StringVar(&sourcesPath, "sources", "/config/sources.yaml", "Path to catalog sources config")
 	flag.StringVar(&databaseType, "db-type", "postgres", "Database type (postgres or mysql)")
 	flag.StringVar(&databaseDSN, "db-dsn", "", "Database connection string")
+	flag.StringVar(&configStoreStr, "config-store", "file", "Config store backend (file or none)")
 	flag.Parse()
 
 	// Initialize glog for backwards compatibility
@@ -86,8 +88,16 @@ func main() {
 		glog.Fatalf("Failed to connect to database: %v", err)
 	}
 
+	// Set up config store.
+	var serverOpts []plugin.ServerOption
+	if configStoreStr == "file" {
+		configStore := plugin.NewFileConfigStore(sourcesPath)
+		serverOpts = append(serverOpts, plugin.WithConfigStore(configStore))
+		logger.Info("using file config store", "path", sourcesPath)
+	}
+
 	// Create and initialize server
-	server := plugin.NewServer(cfg, []string{sourcesPath}, gormDB, logger)
+	server := plugin.NewServer(cfg, []string{sourcesPath}, gormDB, logger, serverOpts...)
 	if err := server.Init(ctx); err != nil {
 		glog.Fatalf("Failed to initialize plugins: %v", err)
 	}
@@ -98,6 +108,9 @@ func main() {
 	if err := server.Start(ctx); err != nil {
 		glog.Fatalf("Failed to start plugins: %v", err)
 	}
+
+	// Start config reconcile loop in background.
+	go server.ReconcileLoop(ctx)
 
 	logger.Info("catalog server ready",
 		"listen", listenAddr,

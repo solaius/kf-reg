@@ -3,6 +3,8 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	pkgcatalog "github.com/kubeflow/model-registry/pkg/catalog"
@@ -36,13 +38,27 @@ func (p *McpServerCatalogPlugin) ListSources(ctx context.Context) ([]plugin.Sour
 	result := make([]plugin.SourceInfo, 0, len(allSources))
 
 	for _, src := range allSources {
+		// Copy properties so we can enrich without mutating the original.
+		props := make(map[string]any, len(src.Properties))
+		for k, v := range src.Properties {
+			props[k] = v
+		}
+
+		// For YAML sources with a file path, read the file content.
+		if yamlPath, ok := props["yamlCatalogPath"].(string); ok && yamlPath != "" {
+			resolvedPath := resolveSourcePath(src, yamlPath)
+			if data, err := os.ReadFile(resolvedPath); err == nil {
+				props["content"] = string(data)
+			}
+		}
+
 		info := plugin.SourceInfo{
 			ID:         src.ID,
 			Name:       src.Name,
 			Type:       src.Type,
 			Enabled:    src.IsEnabled(),
 			Labels:     src.Labels,
-			Properties: src.Properties,
+			Properties: props,
 			Status: plugin.SourceStatus{
 				State: sourceState(src),
 			},
@@ -51,6 +67,10 @@ func (p *McpServerCatalogPlugin) ListSources(ctx context.Context) ([]plugin.Sour
 		// Get entity count from the repository
 		if src.IsEnabled() {
 			info.Status.State = plugin.SourceStateAvailable
+			count, err := p.services.McpServerRepository.CountBySource(src.ID)
+			if err == nil {
+				info.Status.EntityCount = count
+			}
 		}
 
 		result = append(result, info)
@@ -107,6 +127,31 @@ func (p *McpServerCatalogPlugin) ApplySource(ctx context.Context, src plugin.Sou
 		enabled = *src.Enabled
 	}
 
+	// If both content and yamlCatalogPath are provided, write content to the file.
+	if src.Properties != nil {
+		if content, ok := src.Properties["content"].(string); ok && content != "" {
+			if yamlPath, ok := src.Properties["yamlCatalogPath"].(string); ok && yamlPath != "" {
+				// Resolve path using the existing source's origin if available.
+				existingSource, exists := p.loader.Sources.AllSources()[src.ID]
+				if exists {
+					resolved := resolveSourcePath(existingSource, yamlPath)
+					if err := os.WriteFile(resolved, []byte(content), 0644); err != nil {
+						return fmt.Errorf("failed to write YAML file %s: %w", resolved, err)
+					}
+				}
+			}
+		}
+
+		// Don't persist inline content in source properties — the file is the source of truth.
+		delete(src.Properties, "content")
+	}
+
+	origin := "api"
+	// Preserve the origin of an existing source so path resolution continues to work.
+	if existingSource, exists := p.loader.Sources.AllSources()[src.ID]; exists && existingSource.Origin != "" {
+		origin = existingSource.Origin
+	}
+
 	source := pkgcatalog.Source{
 		ID:         src.ID,
 		Name:       src.Name,
@@ -114,14 +159,14 @@ func (p *McpServerCatalogPlugin) ApplySource(ctx context.Context, src plugin.Sou
 		Enabled:    &enabled,
 		Labels:     src.Labels,
 		Properties: src.Properties,
-		Origin:     "api",
+		Origin:     origin,
 	}
 
 	sources := map[string]pkgcatalog.Source{
 		src.ID: source,
 	}
 
-	return p.loader.Sources.Merge("api", sources)
+	return p.loader.Sources.Merge(origin, sources)
 }
 
 // EnableSource enables or disables a source.
@@ -209,6 +254,12 @@ func (p *McpServerCatalogPlugin) Diagnostics(ctx context.Context) (*plugin.Plugi
 			Name:  src.Name,
 			State: sourceState(src),
 		}
+		if src.IsEnabled() {
+			count, err := p.services.McpServerRepository.CountBySource(src.ID)
+			if err == nil {
+				sd.EntityCount = count
+			}
+		}
 		diag.Sources = append(diag.Sources, sd)
 	}
 
@@ -255,6 +306,17 @@ func (p *McpServerCatalogPlugin) CLIHints() plugin.CLIHints {
 		SortField:        "name",
 		FilterableFields: []string{"name", "deploymentMode", "provider", "category", "license", "transportType"},
 	}
+}
+
+// resolveSourcePath resolves a relative path against the source's origin directory.
+func resolveSourcePath(src pkgcatalog.Source, path string) string {
+	if filepath.IsAbs(path) {
+		return path
+	}
+	if src.Origin != "" {
+		return filepath.Join(filepath.Dir(src.Origin), path)
+	}
+	return path
 }
 
 // sourceState returns the state string for a source.

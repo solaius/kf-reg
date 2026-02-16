@@ -91,29 +91,38 @@ func (app *App) EnableTelemetry(next http.Handler) http.Handler {
 func (app *App) AttachModelCatalogRESTClient(next func(http.ResponseWriter, *http.Request, httprouter.Params)) httprouter.Handle {
 	return func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 
-		namespace, ok := r.Context().Value(constants.NamespaceHeaderParameterKey).(string)
-		if !ok || namespace == "" {
-			app.badRequestResponse(w, r, fmt.Errorf("missing namespace in the context"))
-		}
+		var modelCatalogBaseURL string
 
-		client, err := app.kubernetesClientFactory.GetClient(r.Context())
-		if err != nil {
-			app.serverErrorResponse(w, r, fmt.Errorf("failed to get Kubernetes client: %w", err))
-			return
-		}
+		if app.config.CatalogServerURL != "" {
+			// Direct catalog-server URL provided via --catalog-server-url or CATALOG_SERVER_BASE_URL
+			modelCatalogBaseURL = app.config.CatalogServerURL
+		} else {
+			// Fall back to Kubernetes service discovery
+			namespace, ok := r.Context().Value(constants.NamespaceHeaderParameterKey).(string)
+			if !ok || namespace == "" {
+				app.badRequestResponse(w, r, fmt.Errorf("missing namespace in the context"))
+				return
+			}
 
-		modelCatalog, err := app.repositories.ModelCatalog.GetModelCatalogWithMode(r.Context(), client, namespace, app.config.DeploymentMode.IsFederatedMode())
-		if err != nil {
-			app.notFoundResponse(w, r)
-			return
-		}
-		modelCatalogBaseURL := modelCatalog.ServerAddress
+			client, err := app.kubernetesClientFactory.GetClient(r.Context())
+			if err != nil {
+				app.serverErrorResponse(w, r, fmt.Errorf("failed to get Kubernetes client: %w", err))
+				return
+			}
 
-		// If we are in dev mode, we need to resolve the server address to the local host
-		// to allow the client to connect to the model registry via port forwarded from the cluster to the local machine.
-		// If you are in federated mode, we do not want to override the server address.
-		if app.config.DevMode && !app.config.DeploymentMode.IsFederatedMode() {
-			modelCatalogBaseURL = app.repositories.ModelCatalog.ResolveServerAddress("localhost", int32(app.config.DevModeCatalogPort), modelCatalog.IsHTTPS, "", app.config.DeploymentMode.IsFederatedMode())
+			modelCatalog, err := app.repositories.ModelCatalog.GetModelCatalogWithMode(r.Context(), client, namespace, app.config.DeploymentMode.IsFederatedMode())
+			if err != nil {
+				app.notFoundResponse(w, r)
+				return
+			}
+			modelCatalogBaseURL = modelCatalog.ServerAddress
+
+			// If we are in dev mode, we need to resolve the server address to the local host
+			// to allow the client to connect to the model registry via port forwarded from the cluster to the local machine.
+			// If you are in federated mode, we do not want to override the server address.
+			if app.config.DevMode && !app.config.DeploymentMode.IsFederatedMode() {
+				modelCatalogBaseURL = app.repositories.ModelCatalog.ResolveServerAddress("localhost", int32(app.config.DevModeCatalogPort), modelCatalog.IsHTTPS, "", app.config.DeploymentMode.IsFederatedMode())
+			}
 		}
 
 		// Set up a child logger for the rest client that automatically adds the request id to all statements for

@@ -24,7 +24,12 @@ func (app *App) GetCatalogFilterListHandler(w http.ResponseWriter, r *http.Reque
 	catalogFilterOptions, err := app.repositories.ModelCatalogClient.GetCatalogFilterOptions(client)
 
 	if err != nil {
-		app.serverErrorResponse(w, r, err)
+		var httpErr *httpclient.HTTPError
+		if errors.As(err, &httpErr) {
+			app.errorResponse(w, r, httpErr)
+		} else {
+			app.serverErrorResponse(w, r, err)
+		}
 		return
 	}
 

@@ -22,7 +22,12 @@ func (app *App) GetAllCatalogModelsAcrossSourcesHandler(w http.ResponseWriter, r
 	catalogModels, err := app.repositories.ModelCatalogClient.GetAllCatalogModelsAcrossSources(client, r.URL.Query())
 
 	if err != nil {
-		app.serverErrorResponse(w, r, err)
+		var httpErr *httpclient.HTTPError
+		if errors.As(err, &httpErr) {
+			app.errorResponse(w, r, httpErr)
+		} else {
+			app.serverErrorResponse(w, r, err)
+		}
 		return
 	}
 
@@ -34,5 +39,4 @@ func (app *App) GetAllCatalogModelsAcrossSourcesHandler(w http.ResponseWriter, r
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 	}
-
 }
