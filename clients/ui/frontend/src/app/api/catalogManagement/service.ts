@@ -8,9 +8,12 @@ import {
   restGET,
 } from 'mod-arch-core';
 import {
+  ApplyResult,
   CatalogPluginList,
+  DetailedValidationResult,
   PluginDiagnostics,
   RefreshResult,
+  RevisionsResponse,
   SourceConfigInput,
   SourcesListResponse,
   ValidationResult,
@@ -117,4 +120,71 @@ export const getPluginDiagnostics =
         return response.data;
       }
       throw new Error('Invalid response format');
+    });
+
+export const validatePluginSourceAction =
+  (hostPath: string, queryParams: Record<string, unknown> = {}) =>
+  (
+    opts: APIOptions,
+    pluginName: string,
+    sourceId: string,
+    data: SourceConfigInput,
+  ): Promise<DetailedValidationResult> =>
+    handleRestFailures(
+      restCREATE(
+        hostPath,
+        `/../catalog/${pluginName}/sources/${sourceId}/validate`,
+        assembleModArchBody(data),
+        queryParams,
+        opts,
+      ),
+    ).then((response) => {
+      if (isModArchResponse<DetailedValidationResult>(response)) {
+        return response.data;
+      }
+      throw new Error('Invalid response format');
+    });
+
+export const getPluginSourceRevisions =
+  (hostPath: string, queryParams: Record<string, unknown> = {}) =>
+  (opts: APIOptions, pluginName: string, sourceId: string): Promise<RevisionsResponse> =>
+    handleRestFailures(
+      restGET(hostPath, `/../catalog/${pluginName}/sources/${sourceId}/revisions`, queryParams, opts),
+    ).then((response) => {
+      if (isModArchResponse<RevisionsResponse>(response)) {
+        return response.data;
+      }
+      throw new Error('Invalid response format');
+    });
+
+export const rollbackPluginSource =
+  (hostPath: string, queryParams: Record<string, unknown> = {}) =>
+  (opts: APIOptions, pluginName: string, sourceId: string, version: string): Promise<void> =>
+    handleRestFailures(
+      restCREATE(
+        hostPath,
+        `/../catalog/${pluginName}/sources/${sourceId}/rollback`,
+        assembleModArchBody({ version }),
+        queryParams,
+        opts,
+      ),
+    ).then(() => undefined);
+
+export const applyPluginSourceWithRefresh =
+  (hostPath: string, queryParams: Record<string, unknown> = {}) =>
+  (opts: APIOptions, pluginName: string, data: SourceConfigInput & { refreshAfterApply?: boolean }): Promise<ApplyResult> =>
+    handleRestFailures(
+      restCREATE(
+        hostPath,
+        `/../catalog/${pluginName}/apply-source`,
+        assembleModArchBody(data),
+        queryParams,
+        opts,
+      ),
+    ).then((response) => {
+      if (isModArchResponse<ApplyResult>(response)) {
+        return response.data;
+      }
+      // Fall back to a default result when the response doesn't include ApplyResult data
+      return { status: 'applied' };
     });

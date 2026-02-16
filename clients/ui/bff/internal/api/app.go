@@ -88,6 +88,9 @@ const (
 	CatalogPluginRefreshPath         = CatalogPluginManagementPrefix + "/refresh"
 	CatalogPluginRefreshSourcePath   = CatalogPluginRefreshPath + "/:" + CatalogSourceId
 	CatalogPluginDiagnosticsPath     = CatalogPluginManagementPrefix + "/diagnostics"
+	CatalogPluginSourceValidateActionPath = CatalogPluginSourcePath + "/validate"
+	CatalogPluginSourceRevisionsPath     = CatalogPluginSourcePath + "/revisions"
+	CatalogPluginSourceRollbackPath      = CatalogPluginSourcePath + "/rollback"
 
 	// MCP catalog browsing routes
 	McpServerName         = "mcp_server_name"
@@ -281,6 +284,9 @@ func (app *App) Routes() http.Handler {
 	apiRouter.POST(CatalogPluginRefreshPath, app.AttachNamespace(app.AttachModelCatalogRESTClient(app.RefreshPluginHandler)))
 	apiRouter.POST(CatalogPluginRefreshSourcePath, app.AttachNamespace(app.AttachModelCatalogRESTClient(app.RefreshPluginSourceHandler)))
 	apiRouter.GET(CatalogPluginDiagnosticsPath, app.AttachNamespace(app.AttachModelCatalogRESTClient(app.GetPluginDiagnosticsHandler)))
+	apiRouter.POST(CatalogPluginSourceValidateActionPath, app.AttachNamespace(app.AttachModelCatalogRESTClient(app.ValidatePluginSourceHandler)))
+	apiRouter.GET(CatalogPluginSourceRevisionsPath, app.AttachNamespace(app.AttachModelCatalogRESTClient(app.GetPluginSourceRevisionsHandler)))
+	apiRouter.POST(CatalogPluginSourceRollbackPath, app.AttachNamespace(app.AttachModelCatalogRESTClient(app.RollbackPluginSourceHandler)))
 
 	// MCP catalog browsing routes
 	apiRouter.GET(McpCatalogServersPath, app.AttachNamespace(app.AttachModelCatalogRESTClient(app.GetMcpServersHandler)))

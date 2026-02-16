@@ -29,12 +29,16 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -buildvc
 # Build catalog CLI binary
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -buildvcs=false -o catalog-cli ./cmd/catalog
 
+# Build healthcheck binary
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -buildvcs=false -o healthcheck ./cmd/healthcheck
+
 # Runtime image
 FROM gcr.io/distroless/static:nonroot
 WORKDIR /
 
 COPY --from=builder /workspace/catalog-server .
 COPY --from=builder /workspace/catalog-cli .
+COPY --from=builder /workspace/healthcheck /usr/local/bin/healthcheck
 
 # Copy config and data files (preserve relative path structure for yamlCatalogPath resolution)
 COPY catalog/config/ /config/

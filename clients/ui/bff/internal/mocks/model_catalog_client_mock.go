@@ -467,6 +467,34 @@ func (m *ModelCatalogClientMock) GetPluginDiagnostics(client httpclient.HTTPClie
 	}, nil
 }
 
+func (m *ModelCatalogClientMock) ValidatePluginSource(client httpclient.HTTPClientInterface, basePath string, sourceId string, payload models.SourceConfigPayload) (*models.DetailedValidationResult, error) {
+	return &models.DetailedValidationResult{
+		Valid: true,
+		LayerResults: []models.LayerValidationResult{
+			{Layer: "yaml_parse", Valid: true},
+			{Layer: "strict_fields", Valid: true},
+			{Layer: "semantic", Valid: true},
+		},
+	}, nil
+}
+
+func (m *ModelCatalogClientMock) GetPluginSourceRevisions(client httpclient.HTTPClientInterface, basePath string, sourceId string) (*models.RevisionList, error) {
+	return &models.RevisionList{
+		Revisions: []models.ConfigRevision{
+			{Version: "abc123", Timestamp: "2025-12-15T10:00:00Z", Size: 1024},
+			{Version: "def456", Timestamp: "2025-12-14T09:00:00Z", Size: 980},
+		},
+		Count: 2,
+	}, nil
+}
+
+func (m *ModelCatalogClientMock) RollbackPluginSource(client httpclient.HTTPClientInterface, basePath string, sourceId string, payload models.RollbackRequest) (*models.RollbackResult, error) {
+	return &models.RollbackResult{
+		Status:  "rolled_back",
+		Version: payload.Version,
+	}, nil
+}
+
 func (m *ModelCatalogClientMock) ResolvePluginBasePath(client httpclient.HTTPClientInterface, pluginName string) (string, error) {
 	pluginList := GetCatalogPluginListMock()
 	for _, plugin := range pluginList.Plugins {

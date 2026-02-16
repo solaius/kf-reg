@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-server
+  namespace: kubeflow
+  labels:
+    app: catalog-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: catalog-server
+  template:
+    metadata:
+      labels:
+        app: catalog-server
+    spec:
+      serviceAccountName: catalog-server
+      containers:
+        - name: catalog-server
+          image: catalog-server:latest
+          ports:
+            - containerPort: 8080
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            failureThreshold: 30
+            periodSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: 8080
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"

@@ -38,6 +38,10 @@ import './PluginSourceConfigPage.css';
 import { useNavigate, useParams } from 'react-router-dom';
 import { CatalogManagementContext } from '~/app/context/catalogManagement/CatalogManagementContext';
 import { catalogPluginSourcesUrl } from '~/app/routes/catalogManagement/catalogManagement';
+import { ConfigRevision, DetailedValidationResult } from '~/app/catalogManagementTypes';
+import ValidationResultPanel from '~/app/pages/catalogManagement/components/ValidationResultPanel';
+import RevisionHistoryPanel from '~/app/pages/catalogManagement/components/RevisionHistoryPanel';
+import RollbackConfirmModal from '~/app/pages/catalogManagement/components/RollbackConfirmModal';
 
 const PLUGIN_LABELS: Record<string, { entityLabel: string; catalogLabel: string; description: string }> = {
   model: {
@@ -77,6 +81,21 @@ const PluginSourceConfigPage: React.FC = () => {
   const [sourceLabels, setSourceLabels] = React.useState<string[]>([]);
   const [entityCount, setEntityCount] = React.useState(0);
 
+  // Validation state
+  const [validating, setValidating] = React.useState(false);
+  const [validationResult, setValidationResult] = React.useState<DetailedValidationResult | undefined>();
+
+  // Revision history state
+  const [revisions, setRevisions] = React.useState<ConfigRevision[]>([]);
+  const [revisionsLoading, setRevisionsLoading] = React.useState(false);
+
+  // Rollback state
+  const [rollbackVersion, setRollbackVersion] = React.useState<string | undefined>();
+  const [rollingBack, setRollingBack] = React.useState(false);
+
+  // Apply+refresh feedback
+  const [applySuccess, setApplySuccess] = React.useState<string | undefined>();
+
   React.useEffect(() => {
     if (!isManageMode || !apiState.apiAvailable || !pluginName) {
       return;
@@ -111,12 +130,105 @@ const PluginSourceConfigPage: React.FC = () => {
       });
   }, [isManageMode, apiState, pluginName, sourceId]);
 
+  // Fetch revisions for existing sources
+  const fetchRevisions = React.useCallback(() => {
+    if (!isManageMode || !apiState.apiAvailable || !pluginName || !sourceId) {
+      return;
+    }
+    setRevisionsLoading(true);
+    apiState.api
+      .getPluginSourceRevisions({}, pluginName, sourceId)
+      .then((data) => {
+        setRevisions(data.revisions || []);
+      })
+      .catch(() => {
+        // Silently fail - revisions are optional
+        setRevisions([]);
+      })
+      .finally(() => setRevisionsLoading(false));
+  }, [isManageMode, apiState, pluginName, sourceId]);
+
+  React.useEffect(() => {
+    fetchRevisions();
+  }, [fetchRevisions]);
+
+  // Validate handler
+  const handleValidate = React.useCallback(async () => {
+    if (!apiState.apiAvailable || !pluginName || !sourceName.trim()) {
+      return;
+    }
+    setValidating(true);
+    setValidationResult(undefined);
+    try {
+      const effectiveSourceId = isManageMode && sourceId ? sourceId : sourceName.toLowerCase().replace(/\s+/g, '-');
+      const properties: Record<string, string> = {};
+      if (yamlContent) {
+        properties.content = yamlContent;
+      }
+      if (yamlCatalogPath) {
+        properties.yamlCatalogPath = yamlCatalogPath;
+      }
+      const payload = {
+        id: effectiveSourceId,
+        name: sourceName,
+        type: sourceType,
+        enabled: visibleInCatalog,
+        properties: Object.keys(properties).length > 0 ? properties : undefined,
+      };
+      const result = await apiState.api.validatePluginSourceAction({}, pluginName, effectiveSourceId, payload);
+      setValidationResult(result);
+    } catch (err) {
+      setValidationResult({
+        valid: false,
+        errors: [{ message: err instanceof Error ? err.message : String(err) }],
+        layerResults: [],
+      });
+    } finally {
+      setValidating(false);
+    }
+  }, [apiState, pluginName, sourceName, sourceType, yamlContent, yamlCatalogPath, visibleInCatalog, isManageMode, sourceId]);
+
+  // Rollback handler
+  const handleRollbackConfirm = React.useCallback(async () => {
+    if (!apiState.apiAvailable || !pluginName || !sourceId || !rollbackVersion) {
+      return;
+    }
+    setRollingBack(true);
+    try {
+      await apiState.api.rollbackPluginSource({}, pluginName, sourceId, rollbackVersion);
+      setRollbackVersion(undefined);
+      fetchRevisions();
+      // Re-fetch source data after rollback
+      apiState.api
+        .getPluginSources({}, pluginName)
+        .then((data) => {
+          const source = data.sources?.find((s) => s.id === sourceId);
+          if (source) {
+            setSourceName(source.name);
+            setSourceType(source.type);
+            setVisibleInCatalog(source.enabled);
+            setEntityCount(source.status?.entityCount || 0);
+            const content = source.properties?.content;
+            if (typeof content === 'string') {
+              setYamlContent(content);
+            }
+          }
+        })
+        .catch(() => undefined);
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRollingBack(false);
+    }
+  }, [apiState, pluginName, sourceId, rollbackVersion, fetchRevisions]);
+
   const handleSubmit = React.useCallback(async () => {
     if (!apiState.apiAvailable || !pluginName || !sourceName.trim()) {
       return;
     }
     setSubmitting(true);
     setSubmitError(undefined);
+    setApplySuccess(undefined);
     try {
       const properties: Record<string, string> = {};
       if (yamlContent) {
@@ -132,15 +244,26 @@ const PluginSourceConfigPage: React.FC = () => {
         type: sourceType,
         enabled: visibleInCatalog,
         properties: Object.keys(properties).length > 0 ? properties : undefined,
+        refreshAfterApply: true,
       };
-      await apiState.api.applyPluginSource({}, pluginName, payload);
-      navigate(catalogPluginSourcesUrl(pluginName));
+      const result = await apiState.api.applyPluginSourceWithRefresh({}, pluginName, payload);
+      if (result.refreshResult) {
+        const r = result.refreshResult;
+        setApplySuccess(
+          `Source saved and refreshed: ${r.entitiesLoaded} ${labels.entityLabel} loaded, ${r.entitiesRemoved} removed (${r.duration}ms).`,
+        );
+      } else {
+        setApplySuccess('Source saved successfully.');
+      }
+      if (!isManageMode) {
+        navigate(catalogPluginSourcesUrl(pluginName));
+      }
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : String(err));
     } finally {
       setSubmitting(false);
     }
-  }, [apiState, pluginName, sourceName, sourceType, yamlContent, yamlCatalogPath, visibleInCatalog, isManageMode, sourceId, navigate]);
+  }, [apiState, pluginName, sourceName, sourceType, yamlContent, yamlCatalogPath, visibleInCatalog, isManageMode, sourceId, navigate, labels.entityLabel]);
 
   const handleFileChange = (
     _event: React.DragEvent<HTMLElement> | React.ChangeEvent<HTMLInputElement> | Event,
@@ -304,6 +427,12 @@ const PluginSourceConfigPage: React.FC = () => {
                 </StackItem>
               </Stack>
             </Form>
+
+            {validationResult && (
+              <div className="pf-v6-u-mt-md">
+                <ValidationResultPanel result={validationResult} />
+              </div>
+            )}
           </SidebarContent>
           <SidebarPanel width={{ default: 'width_50' }}>
             <div data-testid="preview-panel" className="pf-v6-u-h-100">
@@ -354,6 +483,13 @@ const PluginSourceConfigPage: React.FC = () => {
                       </DescriptionListGroup>
                     )}
                   </DescriptionList>
+                  <div className="pf-v6-u-mt-lg">
+                    <RevisionHistoryPanel
+                      revisions={revisions}
+                      loading={revisionsLoading}
+                      onRollback={(version) => setRollbackVersion(version)}
+                    />
+                  </div>
                 </>
               ) : (
                 <>
@@ -379,6 +515,16 @@ const PluginSourceConfigPage: React.FC = () => {
       </PageSection>
       <PageSection hasBodyWrapper={false} stickyOnBreakpoint={{ default: 'bottom' }}>
         <Stack hasGutter>
+          {applySuccess && (
+            <StackItem>
+              <Alert
+                variant="success"
+                isInline
+                title={applySuccess}
+                data-testid="apply-success-alert"
+              />
+            </StackItem>
+          )}
           {submitError && (
             <StackItem>
               <Alert variant="danger" isInline title="Error saving source">
@@ -393,11 +539,22 @@ const PluginSourceConfigPage: React.FC = () => {
                   <Button
                     variant="primary"
                     onClick={handleSubmit}
-                    isDisabled={submitting || !sourceName.trim()}
+                    isDisabled={submitting || validating || !sourceName.trim()}
                     isLoading={submitting}
                     data-testid="submit-source-button"
                   >
                     {isManageMode ? 'Save' : 'Add'}
+                  </Button>
+                </ActionListItem>
+                <ActionListItem>
+                  <Button
+                    variant="secondary"
+                    onClick={handleValidate}
+                    isDisabled={submitting || validating || !sourceName.trim()}
+                    isLoading={validating}
+                    data-testid="validate-source-button"
+                  >
+                    Validate
                   </Button>
                 </ActionListItem>
                 <ActionListItem>
@@ -414,6 +571,15 @@ const PluginSourceConfigPage: React.FC = () => {
           </StackItem>
         </Stack>
       </PageSection>
+
+      {rollbackVersion && (
+        <RollbackConfirmModal
+          version={rollbackVersion}
+          onConfirm={handleRollbackConfirm}
+          onCancel={() => setRollbackVersion(undefined)}
+          isSubmitting={rollingBack}
+        />
+      )}
     </>
   );
 };

@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -40,7 +41,8 @@ func TestFileConfigStore_Load(t *testing.T) {
 	dir := t.TempDir()
 	path := writeTestConfig(t, dir, testConfigYAML)
 
-	store := NewFileConfigStore(path)
+	store, err := NewFileConfigStore(path)
+	require.NoError(t, err)
 	cfg, version, err := store.Load(context.Background())
 	require.NoError(t, err)
 	require.NotEmpty(t, version)
@@ -56,8 +58,9 @@ func TestFileConfigStore_Load(t *testing.T) {
 }
 
 func TestFileConfigStore_Load_FileNotFound(t *testing.T) {
-	store := NewFileConfigStore(filepath.Join(t.TempDir(), "nonexistent.yaml"))
-	_, _, err := store.Load(context.Background())
+	store, err := NewFileConfigStore(filepath.Join(t.TempDir(), "nonexistent.yaml"))
+	require.NoError(t, err)
+	_, _, err = store.Load(context.Background())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to read")
 }
@@ -66,8 +69,9 @@ func TestFileConfigStore_Load_InvalidYAML(t *testing.T) {
 	dir := t.TempDir()
 	path := writeTestConfig(t, dir, "not: [valid: yaml: {{")
 
-	store := NewFileConfigStore(path)
-	_, _, err := store.Load(context.Background())
+	store, err := NewFileConfigStore(path)
+	require.NoError(t, err)
+	_, _, err = store.Load(context.Background())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to parse")
 }
@@ -76,7 +80,8 @@ func TestFileConfigStore_Load_StableVersion(t *testing.T) {
 	dir := t.TempDir()
 	path := writeTestConfig(t, dir, testConfigYAML)
 
-	store := NewFileConfigStore(path)
+	store, err := NewFileConfigStore(path)
+	require.NoError(t, err)
 
 	_, v1, err := store.Load(context.Background())
 	require.NoError(t, err)
@@ -91,7 +96,8 @@ func TestFileConfigStore_Save(t *testing.T) {
 	dir := t.TempDir()
 	path := writeTestConfig(t, dir, testConfigYAML)
 
-	store := NewFileConfigStore(path)
+	store, err := NewFileConfigStore(path)
+	require.NoError(t, err)
 	ctx := context.Background()
 
 	// Load to get current version.
@@ -133,7 +139,8 @@ func TestFileConfigStore_Save_VersionConflict(t *testing.T) {
 	dir := t.TempDir()
 	path := writeTestConfig(t, dir, testConfigYAML)
 
-	store := NewFileConfigStore(path)
+	store, err := NewFileConfigStore(path)
+	require.NoError(t, err)
 	ctx := context.Background()
 
 	cfg, version, err := store.Load(ctx)
@@ -152,7 +159,8 @@ func TestFileConfigStore_Save_StaleVersionString(t *testing.T) {
 	dir := t.TempDir()
 	path := writeTestConfig(t, dir, testConfigYAML)
 
-	store := NewFileConfigStore(path)
+	store, err := NewFileConfigStore(path)
+	require.NoError(t, err)
 	ctx := context.Background()
 
 	cfg, _, err := store.Load(ctx)
@@ -167,7 +175,8 @@ func TestFileConfigStore_Save_AtomicWrite(t *testing.T) {
 	dir := t.TempDir()
 	path := writeTestConfig(t, dir, testConfigYAML)
 
-	store := NewFileConfigStore(path)
+	store, err := NewFileConfigStore(path)
+	require.NoError(t, err)
 	ctx := context.Background()
 
 	cfg, version, err := store.Load(ctx)
@@ -186,22 +195,26 @@ func TestFileConfigStore_Save_AtomicWrite(t *testing.T) {
 }
 
 func TestFileConfigStore_Watch_ReturnsNil(t *testing.T) {
-	store := NewFileConfigStore("/dummy/path")
+	store, err := NewFileConfigStore(filepath.Join(t.TempDir(), "dummy.yaml"))
+	require.NoError(t, err)
 	ch, err := store.Watch(context.Background())
 	assert.NoError(t, err)
 	assert.Nil(t, ch, "Watch should return nil channel for FileConfigStore")
 }
 
 func TestFileConfigStore_Path(t *testing.T) {
-	store := NewFileConfigStore("/some/path/sources.yaml")
-	assert.Equal(t, "/some/path/sources.yaml", store.Path())
+	path := filepath.Join(t.TempDir(), "sources.yaml")
+	store, err := NewFileConfigStore(path)
+	require.NoError(t, err)
+	assert.Equal(t, path, store.Path())
 }
 
 func TestFileConfigStore_RoundTrip_PreservesStructure(t *testing.T) {
 	dir := t.TempDir()
 	path := writeTestConfig(t, dir, testConfigYAML)
 
-	store := NewFileConfigStore(path)
+	store, err := NewFileConfigStore(path)
+	require.NoError(t, err)
 	ctx := context.Background()
 
 	// Load.
@@ -233,7 +246,8 @@ func TestFileConfigStore_ConcurrentLoadSave(t *testing.T) {
 	dir := t.TempDir()
 	path := writeTestConfig(t, dir, testConfigYAML)
 
-	store := NewFileConfigStore(path)
+	store, err := NewFileConfigStore(path)
+	require.NoError(t, err)
 	ctx := context.Background()
 
 	// Load initial version.
@@ -251,4 +265,156 @@ func TestFileConfigStore_ConcurrentLoadSave(t *testing.T) {
 	// Second save with the new version succeeds.
 	_, err = store.Save(ctx, cfg, v2)
 	require.NoError(t, err)
+}
+
+func TestFileConfigStore_PathTraversal(t *testing.T) {
+	_, err := NewFileConfigStore("../../etc/passwd")
+	require.ErrorIs(t, err, ErrPathTraversal)
+}
+
+func TestFileConfigStore_OversizedFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "large.yaml")
+
+	// Create a file larger than 1 MiB.
+	data := make([]byte, maxConfigFileSize+1)
+	for i := range data {
+		data[i] = 'a'
+	}
+	err := os.WriteFile(path, data, 0644)
+	require.NoError(t, err)
+
+	store, err := NewFileConfigStore(path)
+	require.NoError(t, err)
+	_, _, err = store.Load(context.Background())
+	require.ErrorIs(t, err, ErrFileTooLarge)
+}
+
+func TestFileConfigStore_RevisionCreatedOnSave(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTestConfig(t, dir, testConfigYAML)
+
+	store, err := NewFileConfigStore(path)
+	require.NoError(t, err)
+	ctx := context.Background()
+
+	// Initially no revisions.
+	revs, err := store.ListRevisions(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, revs)
+
+	// Load and save to create a revision.
+	cfg, version, err := store.Load(ctx)
+	require.NoError(t, err)
+
+	_, err = store.Save(ctx, cfg, version)
+	require.NoError(t, err)
+
+	// Now there should be one revision.
+	revs, err = store.ListRevisions(ctx)
+	require.NoError(t, err)
+	assert.Len(t, revs, 1)
+	assert.NotEmpty(t, revs[0].Version)
+	assert.True(t, revs[0].Size > 0)
+}
+
+func TestFileConfigStore_ListRevisions(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTestConfig(t, dir, testConfigYAML)
+
+	store, err := NewFileConfigStore(path)
+	require.NoError(t, err)
+	ctx := context.Background()
+
+	// Do 3 saves, each producing different content to get distinct versions.
+	for i := 0; i < 3; i++ {
+		cfg, version, err := store.Load(ctx)
+		require.NoError(t, err)
+
+		// Mutate to produce a different hash each time.
+		models := cfg.Catalogs["models"]
+		models.Sources = append(models.Sources, SourceConfig{
+			ID:   fmt.Sprintf("rev-src-%d", i),
+			Name: fmt.Sprintf("Rev Source %d", i),
+			Type: "yaml",
+		})
+		cfg.Catalogs["models"] = models
+
+		_, err = store.Save(ctx, cfg, version)
+		require.NoError(t, err)
+	}
+
+	revs, err := store.ListRevisions(ctx)
+	require.NoError(t, err)
+	assert.Len(t, revs, 3)
+
+	// Sorted newest first.
+	for i := 0; i < len(revs)-1; i++ {
+		assert.True(t, !revs[i].Timestamp.Before(revs[i+1].Timestamp),
+			"revisions should be sorted newest first")
+	}
+}
+
+func TestFileConfigStore_RollbackRestoresPrevious(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTestConfig(t, dir, testConfigYAML)
+
+	store, err := NewFileConfigStore(path)
+	require.NoError(t, err)
+	ctx := context.Background()
+
+	// Load original.
+	cfg, version, err := store.Load(ctx)
+	require.NoError(t, err)
+	assert.Len(t, cfg.Catalogs["models"].Sources, 2)
+
+	// Mutate and save.
+	models := cfg.Catalogs["models"]
+	models.Sources = append(models.Sources, SourceConfig{
+		ID:   "src-3",
+		Name: "Source Three",
+		Type: "yaml",
+	})
+	cfg.Catalogs["models"] = models
+
+	_, err = store.Save(ctx, cfg, version)
+	require.NoError(t, err)
+
+	// Verify current state has 3 sources.
+	cfg2, _, err := store.Load(ctx)
+	require.NoError(t, err)
+	assert.Len(t, cfg2.Catalogs["models"].Sources, 3)
+
+	// Get revisions and rollback to the first one.
+	revs, err := store.ListRevisions(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, revs)
+
+	// Rollback to the original (first revision saved = the state before mutation).
+	restoredCfg, _, err := store.Rollback(ctx, revs[0].Version)
+	require.NoError(t, err)
+
+	// The restored config should have the original 2 sources.
+	assert.Len(t, restoredCfg.Catalogs["models"].Sources, 2)
+}
+
+func TestFileConfigStore_HistoryPruning(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTestConfig(t, dir, testConfigYAML)
+
+	store, err := NewFileConfigStore(path)
+	require.NoError(t, err)
+	ctx := context.Background()
+
+	// Do 25 saves (should prune to 20).
+	for i := 0; i < 25; i++ {
+		cfg, version, err := store.Load(ctx)
+		require.NoError(t, err)
+		_, err = store.Save(ctx, cfg, version)
+		require.NoError(t, err)
+	}
+
+	revs, err := store.ListRevisions(ctx)
+	require.NoError(t, err)
+	assert.LessOrEqual(t, len(revs), maxRevisionHistory)
 }

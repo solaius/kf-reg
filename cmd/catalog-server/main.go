@@ -15,6 +15,8 @@ import (
 
 	"github.com/golang/glog"
 	"gorm.io/gorm"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 
 	"github.com/kubeflow/model-registry/internal/datastore"
 	"github.com/kubeflow/model-registry/internal/datastore/embedmd"
@@ -40,8 +42,16 @@ func main() {
 	flag.StringVar(&sourcesPath, "sources", "/config/sources.yaml", "Path to catalog sources config")
 	flag.StringVar(&databaseType, "db-type", "postgres", "Database type (postgres or mysql)")
 	flag.StringVar(&databaseDSN, "db-dsn", "", "Database connection string")
-	flag.StringVar(&configStoreStr, "config-store", "file", "Config store backend (file or none)")
+	flag.StringVar(&configStoreStr, "config-store", "", "Config store backend (file, k8s, or none)")
 	flag.Parse()
+
+	// Allow env var override for config store mode.
+	if configStoreStr == "" {
+		configStoreStr = os.Getenv("CATALOG_CONFIG_STORE_MODE")
+	}
+	if configStoreStr == "" {
+		configStoreStr = "file" // default
+	}
 
 	// Initialize glog for backwards compatibility
 	_ = flag.Set("logtostderr", "true")
@@ -88,12 +98,40 @@ func main() {
 		glog.Fatalf("Failed to connect to database: %v", err)
 	}
 
-	// Set up config store.
+	// Set up config store based on mode (file, k8s, none).
 	var serverOpts []plugin.ServerOption
-	if configStoreStr == "file" {
-		configStore := plugin.NewFileConfigStore(sourcesPath)
+	switch configStoreStr {
+	case "file":
+		configStore, err := plugin.NewFileConfigStore(sourcesPath)
+		if err != nil {
+			glog.Fatalf("Failed to create file config store: %v", err)
+		}
 		serverOpts = append(serverOpts, plugin.WithConfigStore(configStore))
 		logger.Info("using file config store", "path", sourcesPath)
+	case "k8s":
+		k8sNamespace := envOrDefault("CATALOG_CONFIG_NAMESPACE", "default")
+		k8sConfigMap := envOrDefault("CATALOG_CONFIG_CONFIGMAP_NAME", "catalog-sources")
+		k8sDataKey := envOrDefault("CATALOG_CONFIG_CONFIGMAP_KEY", "sources.yaml")
+
+		// Create in-cluster K8s client. This requires the catalog-server to run
+		// inside a K8s pod with an appropriate ServiceAccount and RBAC granting
+		// get/update on the target ConfigMap (see deploy/catalog-server/rbac.yaml).
+		k8sCfg, err := rest.InClusterConfig()
+		if err != nil {
+			glog.Fatalf("Failed to create in-cluster K8s config (is the server running in a pod?): %v", err)
+		}
+		clientset, err := kubernetes.NewForConfig(k8sCfg)
+		if err != nil {
+			glog.Fatalf("Failed to create K8s clientset: %v", err)
+		}
+		configStore := plugin.NewK8sSourceConfigStore(clientset, k8sNamespace, k8sConfigMap, k8sDataKey)
+		serverOpts = append(serverOpts, plugin.WithConfigStore(configStore))
+		logger.Info("using k8s config store",
+			"namespace", k8sNamespace, "configMap", k8sConfigMap, "dataKey", k8sDataKey)
+	case "none":
+		logger.Info("config store disabled, mutations will not be persisted")
+	default:
+		glog.Fatalf("Unknown config store mode: %q (expected file, k8s, or none)", configStoreStr)
 	}
 
 	// Create and initialize server
@@ -196,4 +234,11 @@ func setupDatabase(dbType, dsn string) (*gorm.DB, error) {
 	}
 
 	return gormDB, nil
+}
+
+func envOrDefault(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
 }

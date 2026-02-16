@@ -25,9 +25,16 @@ func managementRouter(p CatalogPlugin, roleExtractor RoleExtractor, srv *Server)
 	if sm, ok := p.(SourceManager); ok {
 		r.Get("/sources", sourcesListHandler(sm))
 		r.Post("/validate-source", RequireRole(RoleOperator, roleExtractor)(http.HandlerFunc(validateHandler(sm))).ServeHTTP)
-		r.Post("/apply-source", RequireRole(RoleOperator, roleExtractor)(http.HandlerFunc(applyHandler(sm, srv, configKey))).ServeHTTP)
+		r.Post("/apply-source", RequireRole(RoleOperator, roleExtractor)(http.HandlerFunc(applyHandler(sm, srv, configKey, p))).ServeHTTP)
 		r.Post("/sources/{sourceId}/enable", RequireRole(RoleOperator, roleExtractor)(http.HandlerFunc(enableHandler(sm, srv, configKey))).ServeHTTP)
 		r.Delete("/sources/{sourceId}", RequireRole(RoleOperator, roleExtractor)(http.HandlerFunc(deleteSourceHandler(sm, srv, configKey))).ServeHTTP)
+
+		// Detailed validation with multi-layer breakdown.
+		r.Post("/sources/{sourceId}:validate", RequireRole(RoleOperator, roleExtractor)(http.HandlerFunc(detailedValidateHandler(sm))).ServeHTTP)
+
+		// Revision history and rollback (requires ConfigStore).
+		r.Get("/sources/{sourceId}/revisions", revisionsHandler(srv))
+		r.Post("/sources/{sourceId}:rollback", RequireRole(RoleOperator, roleExtractor)(http.HandlerFunc(rollbackHandler(srv, configKey, p))).ServeHTTP)
 	}
 
 	// Refresh (requires RefreshProvider)
@@ -84,12 +91,23 @@ func validateHandler(sm SourceManager) http.HandlerFunc {
 }
 
 // applyHandler returns a handler that applies a source configuration.
+// It runs multi-layer validation before applying; invalid configs are rejected with 422.
 // After the in-memory mutation succeeds, it persists the change to the ConfigStore.
-func applyHandler(sm SourceManager, srv *Server, configKey string) http.HandlerFunc {
+func applyHandler(sm SourceManager, srv *Server, configKey string, p CatalogPlugin) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var input SourceConfigInput
 		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid request body", err)
+			return
+		}
+
+		// Run validation before apply.
+		validator := NewDefaultValidator(sm)
+		valResult := validator.Validate(r.Context(), input)
+		if !valResult.Valid {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_ = json.NewEncoder(w).Encode(valResult)
 			return
 		}
 
@@ -112,7 +130,35 @@ func applyHandler(sm SourceManager, srv *Server, configKey string) http.HandlerF
 			}
 		}
 
-		writeJSON(w, http.StatusOK, map[string]string{"status": "applied"})
+		result := ApplyResult{Status: "applied"}
+
+		// Optionally trigger refresh after apply.
+		if input.RefreshAfterApply != nil && *input.RefreshAfterApply {
+			if rp, ok := p.(RefreshProvider); ok {
+				start := time.Now()
+				refreshResult, err := rp.Refresh(r.Context(), input.ID)
+				elapsed := time.Since(start)
+				if err != nil {
+					result.RefreshResult = &RefreshResult{
+						SourceID: input.ID,
+						Duration: elapsed,
+						Error:    err.Error(),
+					}
+				} else {
+					if refreshResult != nil {
+						refreshResult.Duration = elapsed
+						result.RefreshResult = refreshResult
+					} else {
+						result.RefreshResult = &RefreshResult{
+							SourceID: input.ID,
+							Duration: elapsed,
+						}
+					}
+				}
+			}
+		}
+
+		writeJSON(w, http.StatusOK, result)
 	}
 }
 
@@ -236,6 +282,125 @@ func refreshSourceHandler(rp RefreshProvider, rl *RefreshRateLimiter, pluginName
 			return
 		}
 		writeJSON(w, http.StatusOK, result)
+	}
+}
+
+// detailedValidateHandler returns a handler that runs the multi-layer validator
+// and returns a DetailedValidationResult with per-layer breakdown.
+func detailedValidateHandler(sm SourceManager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var input SourceConfigInput
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body", err)
+			return
+		}
+
+		validator := NewDefaultValidator(sm)
+		result := validator.Validate(r.Context(), input)
+
+		writeJSON(w, http.StatusOK, result)
+	}
+}
+
+// revisionsHandler returns a handler that lists revision history from the ConfigStore.
+func revisionsHandler(srv *Server) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if srv == nil || srv.GetConfigStore() == nil {
+			writeJSON(w, http.StatusOK, map[string]any{
+				"revisions": []ConfigRevision{},
+				"count":     0,
+			})
+			return
+		}
+
+		revisions, err := srv.GetConfigStore().ListRevisions(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to list revisions", err)
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{
+			"revisions": revisions,
+			"count":     len(revisions),
+		})
+	}
+}
+
+// rollbackHandler returns a handler that restores a previous config revision.
+// After rollback, it re-initializes the affected plugin.
+func rollbackHandler(srv *Server, configKey string, p CatalogPlugin) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if srv == nil || srv.GetConfigStore() == nil {
+			writeError(w, http.StatusBadRequest, "no config store configured, rollback not available", nil)
+			return
+		}
+
+		var body struct {
+			Version string `json:"version"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body", err)
+			return
+		}
+		if body.Version == "" {
+			writeError(w, http.StatusBadRequest, "version is required", nil)
+			return
+		}
+
+		cfg, newVersion, err := srv.GetConfigStore().Rollback(r.Context(), body.Version)
+		if err != nil {
+			if errors.Is(err, ErrRevisionNotFound) {
+				writeError(w, http.StatusNotFound, "revision not found", err)
+				return
+			}
+			if errors.Is(err, ErrVersionConflict) {
+				writeError(w, http.StatusConflict, "config was modified externally, retry the operation", err)
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "rollback failed", err)
+			return
+		}
+
+		// Update in-memory config and version.
+		srv.mu.Lock()
+		srv.config = cfg
+		srv.configVersion = newVersion
+		srv.mu.Unlock()
+
+		// Re-initialize the plugin with the restored config.
+		section, ok := cfg.Catalogs[configKey]
+		if !ok {
+			section = CatalogSection{}
+		}
+
+		var basePath string
+		if bp, ok := p.(BasePathProvider); ok {
+			basePath = bp.BasePath()
+		} else {
+			basePath = fmt.Sprintf("/api/%s_catalog/%s", p.Name(), p.Version())
+		}
+
+		pluginCfg := Config{
+			Section:  section,
+			DB:       srv.db,
+			Logger:   srv.logger.With("plugin", p.Name()),
+			BasePath: basePath,
+		}
+
+		if err := p.Init(r.Context(), pluginCfg); err != nil {
+			srv.logger.Error("rollback: plugin re-init failed", "plugin", p.Name(), "error", err)
+			writeJSON(w, http.StatusOK, map[string]any{
+				"status":     "rolled_back",
+				"version":    newVersion,
+				"reinitError": err.Error(),
+			})
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":  "rolled_back",
+			"version": newVersion,
+		})
 	}
 }
 

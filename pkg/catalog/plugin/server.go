@@ -23,18 +23,20 @@ type failedPlugin struct {
 
 // Server manages the lifecycle of catalog plugins and provides a unified HTTP server.
 type Server struct {
-	router        chi.Router
-	db            *gorm.DB
-	config        *CatalogSourcesConfig
-	configPaths   []string
-	logger        *slog.Logger
-	plugins       []CatalogPlugin
-	failedPlugins []failedPlugin
-	roleExtractor RoleExtractor
-	configStore   ConfigStore
-	configVersion string // hash from last ConfigStore.Load
-	rateLimiter   *RefreshRateLimiter
-	mu            sync.RWMutex
+	router          chi.Router
+	db              *gorm.DB
+	config          *CatalogSourcesConfig
+	configPaths     []string
+	logger          *slog.Logger
+	plugins         []CatalogPlugin
+	failedPlugins   []failedPlugin
+	roleExtractor   RoleExtractor
+	configStore     ConfigStore
+	configVersion   string // hash from last ConfigStore.Load
+	rateLimiter     *RefreshRateLimiter
+	startedAt       time.Time
+	initialLoadDone bool
+	mu              sync.RWMutex
 }
 
 // ServerOption configures a Server.
@@ -71,6 +73,7 @@ func NewServer(cfg *CatalogSourcesConfig, configPaths []string, db *gorm.DB, log
 		failedPlugins: make([]failedPlugin, 0),
 		roleExtractor: DefaultRoleExtractor,
 		rateLimiter:   NewRefreshRateLimiter(30 * time.Second),
+		startedAt:     time.Now(),
 	}
 
 	for _, opt := range opts {
@@ -146,6 +149,9 @@ func (s *Server) Init(ctx context.Context) error {
 		s.plugins = append(s.plugins, p)
 	}
 
+	// Mark initial load as done so /readyz reports ready.
+	s.initialLoadDone = true
+
 	return nil
 }
 
@@ -197,8 +203,9 @@ func (s *Server) MountRoutes() chi.Router {
 		})
 	}
 
-	// Add health endpoint
+	// Add health endpoints
 	s.router.Get("/healthz", s.healthHandler)
+	s.router.Get("/livez", s.healthHandler)
 	s.router.Get("/readyz", s.readyHandler)
 
 	// Add plugin info endpoint
@@ -210,14 +217,20 @@ func (s *Server) MountRoutes() chi.Router {
 // Start starts all plugins' background operations.
 func (s *Server) Start(ctx context.Context) error {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
+	plugins := make([]CatalogPlugin, len(s.plugins))
+	copy(plugins, s.plugins)
+	s.mu.RUnlock()
 
-	for _, p := range s.plugins {
+	for _, p := range plugins {
 		s.logger.Info("starting plugin", "plugin", p.Name())
 		if err := p.Start(ctx); err != nil {
 			return fmt.Errorf("plugin %s start failed: %w", p.Name(), err)
 		}
 	}
+
+	s.mu.Lock()
+	s.initialLoadDone = true
+	s.mu.Unlock()
 
 	return nil
 }
@@ -254,51 +267,99 @@ func (s *Server) Plugins() []CatalogPlugin {
 	return result
 }
 
-// healthHandler returns the health status of the server.
+// healthHandler returns the liveness status of the server.
 func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
+	uptime := time.Since(s.startedAt).Round(time.Second).String()
+
 	response := map[string]string{
-		"status": "ok",
+		"status": "alive",
+		"uptime": uptime,
 	}
 
 	_ = json.NewEncoder(w).Encode(response)
 }
 
-// readyHandler checks if all plugins are healthy.
+// readyHandler checks if all components are ready to serve traffic.
+// It verifies DB connectivity, initial load completion, and plugin health.
 func (s *Server) readyHandler(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
+	initialLoadDone := s.initialLoadDone
+	plugins := make([]CatalogPlugin, len(s.plugins))
+	copy(plugins, s.plugins)
+	failedPlugins := make([]failedPlugin, len(s.failedPlugins))
+	copy(failedPlugins, s.failedPlugins)
+	s.mu.RUnlock()
 
-	allHealthy := true
-	pluginStatus := make(map[string]bool)
+	allReady := true
 
-	for _, p := range s.plugins {
-		healthy := p.Healthy()
-		pluginStatus[p.Name()] = healthy
-		if !healthy {
-			allHealthy = false
+	// Check DB connectivity.
+	dbStatus := map[string]string{"status": "up"}
+	if s.db != nil {
+		sqlDB, err := s.db.DB()
+		if err != nil {
+			dbStatus["status"] = "down"
+			dbStatus["error"] = err.Error()
+			allReady = false
+		} else if err := sqlDB.Ping(); err != nil {
+			dbStatus["status"] = "down"
+			dbStatus["error"] = err.Error()
+			allReady = false
+		}
+	} else {
+		dbStatus["status"] = "not_configured"
+	}
+
+	// Check initial load completion.
+	initialLoadStatus := map[string]string{"status": "complete"}
+	if !initialLoadDone {
+		initialLoadStatus["status"] = "pending"
+		allReady = false
+	}
+
+	// Check plugin health.
+	healthyCount := 0
+	totalCount := len(plugins) + len(failedPlugins)
+	for _, p := range plugins {
+		if p.Healthy() {
+			healthyCount++
 		}
 	}
 
-	for _, fp := range s.failedPlugins {
-		pluginStatus[fp.plugin.Name()] = false
-		allHealthy = false
+	pluginsStatus := map[string]string{
+		"status":  "healthy",
+		"details": fmt.Sprintf("all %d plugins healthy", totalCount),
+	}
+	if healthyCount < totalCount {
+		pluginsStatus["status"] = "degraded"
+		pluginsStatus["details"] = fmt.Sprintf("%d of %d plugins healthy", healthyCount, totalCount)
+		allReady = false
+	}
+
+	components := map[string]any{
+		"database":     dbStatus,
+		"initial_load": initialLoadStatus,
+		"plugins":      pluginsStatus,
+	}
+
+	status := "ready"
+	if !allReady {
+		status = "not_ready"
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 
-	response := map[string]any{
-		"plugins": pluginStatus,
-	}
-
-	if allHealthy {
-		response["status"] = "ready"
+	if allReady {
 		w.WriteHeader(http.StatusOK)
 	} else {
-		response["status"] = "not_ready"
 		w.WriteHeader(http.StatusServiceUnavailable)
+	}
+
+	response := map[string]any{
+		"status":     status,
+		"components": components,
 	}
 
 	_ = json.NewEncoder(w).Encode(response)

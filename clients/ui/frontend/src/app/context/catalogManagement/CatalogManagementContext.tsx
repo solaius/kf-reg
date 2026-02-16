@@ -9,12 +9,19 @@ import {
   deletePluginSource,
   refreshPlugin,
   getPluginDiagnostics,
+  validatePluginSourceAction,
+  getPluginSourceRevisions,
+  rollbackPluginSource,
+  applyPluginSourceWithRefresh,
 } from '~/app/api/catalogManagement/service';
 import {
+  ApplyResult,
   CatalogPluginInfo,
   CatalogPluginList,
+  DetailedValidationResult,
   PluginDiagnostics,
   RefreshResult,
+  RevisionsResponse,
   SourceConfigInput,
   SourcesListResponse,
   ValidationResult,
@@ -30,6 +37,10 @@ export type CatalogManagementAPIs = {
   deletePluginSource: ReturnType<typeof deletePluginSource>;
   refreshPlugin: ReturnType<typeof refreshPlugin>;
   getPluginDiagnostics: ReturnType<typeof getPluginDiagnostics>;
+  validatePluginSourceAction: ReturnType<typeof validatePluginSourceAction>;
+  getPluginSourceRevisions: ReturnType<typeof getPluginSourceRevisions>;
+  rollbackPluginSource: ReturnType<typeof rollbackPluginSource>;
+  applyPluginSourceWithRefresh: ReturnType<typeof applyPluginSourceWithRefresh>;
 };
 
 export type CatalogManagementAPIState = APIState<CatalogManagementAPIs>;
@@ -78,6 +89,10 @@ export const CatalogManagementContextProvider: React.FC<CatalogManagementContext
       deletePluginSource: deletePluginSource(path, queryParams),
       refreshPlugin: refreshPlugin(path, queryParams),
       getPluginDiagnostics: getPluginDiagnostics(path, queryParams),
+      validatePluginSourceAction: validatePluginSourceAction(path, queryParams),
+      getPluginSourceRevisions: getPluginSourceRevisions(path, queryParams),
+      rollbackPluginSource: rollbackPluginSource(path, queryParams),
+      applyPluginSourceWithRefresh: applyPluginSourceWithRefresh(path, queryParams),
     }),
     [queryParams],
   );

@@ -86,3 +86,43 @@ type PluginDiagnostics struct {
 	LastRefresh string             `json:"lastRefresh,omitempty"`
 	Errors      []DiagnosticError  `json:"errors,omitempty"`
 }
+
+// LayerValidationResult holds the result of a single validation layer.
+type LayerValidationResult struct {
+	Layer  string            `json:"layer"`
+	Valid  bool              `json:"valid"`
+	Errors []ValidationError `json:"errors,omitempty"`
+}
+
+// DetailedValidationResult is the result of running multi-layer validation.
+type DetailedValidationResult struct {
+	Valid        bool                    `json:"valid"`
+	Errors       []ValidationError       `json:"errors,omitempty"`
+	Warnings     []ValidationError       `json:"warnings,omitempty"`
+	LayerResults []LayerValidationResult `json:"layerResults,omitempty"`
+}
+
+// ConfigRevision represents a single revision in the config history.
+type ConfigRevision struct {
+	Version   string `json:"version"`
+	Timestamp string `json:"timestamp"`
+	Size      int64  `json:"size"`
+}
+
+// RevisionList represents the response from listing config revisions.
+type RevisionList struct {
+	Revisions []ConfigRevision `json:"revisions"`
+	Count     int              `json:"count"`
+}
+
+// RollbackRequest represents the request body for a rollback operation.
+type RollbackRequest struct {
+	Version string `json:"version"`
+}
+
+// RollbackResult represents the response from a rollback operation.
+type RollbackResult struct {
+	Status      string `json:"status"`
+	Version     string `json:"version"`
+	ReinitError string `json:"reinitError,omitempty"`
+}

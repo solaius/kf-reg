@@ -26,15 +26,15 @@ services:
       - --db-dsn=postgres://catalog:catalog@postgres:5432/catalog?sslmode=disable
     volumes:
       - ./catalog/config:/config:ro
-      - ./catalog/plugins/mcp/data:/plugins/mcp/data:ro
+      - ./catalog/plugins/mcp/data:/plugins/mcp/data:rw
     depends_on:
       postgres:
         condition: service_healthy
     ports:
       - "8080:8080"
     healthcheck:
-      test: ["CMD", "/catalog-server", "--help"]
+      test: ["CMD", "/usr/local/bin/healthcheck", "http://localhost:8080/readyz"]
       interval: 10s
       timeout: 5s
-      retries: 10
-      start_period: 15s
+      retries: 5
+      start_period: 30s

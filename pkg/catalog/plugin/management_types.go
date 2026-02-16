@@ -34,6 +34,12 @@ type SourceStatus struct {
 	// LastRefreshTime is when the source was last refreshed.
 	LastRefreshTime *time.Time `json:"lastRefreshTime,omitempty"`
 
+	// LastRefreshStatus is the result of the last refresh (success, error).
+	LastRefreshStatus string `json:"lastRefreshStatus,omitempty"`
+
+	// LastRefreshSummary is a human-readable summary of the last refresh.
+	LastRefreshSummary string `json:"lastRefreshSummary,omitempty"`
+
 	// EntityCount is the number of entities loaded from this source.
 	EntityCount int `json:"entityCount"`
 
@@ -69,6 +75,21 @@ type SourceConfigInput struct {
 
 	// Properties contains provider-specific configuration.
 	Properties map[string]any `json:"properties,omitempty"`
+
+	// RefreshAfterApply indicates whether to trigger a refresh after applying
+	// the source configuration. When true, the apply response includes the
+	// refresh result with entity counts and timing.
+	RefreshAfterApply *bool `json:"refreshAfterApply,omitempty"`
+}
+
+// ApplyResult is the result of applying a source configuration, optionally
+// including refresh results when RefreshAfterApply was set.
+type ApplyResult struct {
+	// Status is "applied" on success.
+	Status string `json:"status"`
+
+	// RefreshResult is populated when refreshAfterApply was true.
+	RefreshResult *RefreshResult `json:"refreshResult,omitempty"`
 }
 
 // ValidationResult is the result of validating a source configuration.

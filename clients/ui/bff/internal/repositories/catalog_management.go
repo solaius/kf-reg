@@ -17,6 +17,7 @@ const (
 	mgmtValidatePath    = "/validate-source"
 	mgmtApplyPath       = "/apply-source"
 	mgmtEnableSuffix    = "/enable"
+	mgmtRevisionsPath   = "/revisions"
 )
 
 // CatalogManagementInterface defines the methods for plugin management operations.
@@ -30,6 +31,9 @@ type CatalogManagementInterface interface {
 	RefreshPluginSource(client httpclient.HTTPClientInterface, basePath string, sourceId string) (*models.RefreshResult, error)
 	GetPluginDiagnostics(client httpclient.HTTPClientInterface, basePath string) (*models.PluginDiagnostics, error)
 	ResolvePluginBasePath(client httpclient.HTTPClientInterface, pluginName string) (string, error)
+	ValidatePluginSource(client httpclient.HTTPClientInterface, basePath string, sourceId string, payload models.SourceConfigPayload) (*models.DetailedValidationResult, error)
+	GetPluginSourceRevisions(client httpclient.HTTPClientInterface, basePath string, sourceId string) (*models.RevisionList, error)
+	RollbackPluginSource(client httpclient.HTTPClientInterface, basePath string, sourceId string, payload models.RollbackRequest) (*models.RollbackResult, error)
 }
 
 // CatalogManagement implements CatalogManagementInterface.
@@ -204,6 +208,76 @@ func (a CatalogManagement) GetPluginDiagnostics(client httpclient.HTTPClientInte
 	}
 
 	return &diagnostics, nil
+}
+
+func (a CatalogManagement) ValidatePluginSource(client httpclient.HTTPClientInterface, basePath string, sourceId string, payload models.SourceConfigPayload) (*models.DetailedValidationResult, error) {
+	path, err := url.JoinPath(basePath, mgmtSourcesPath, sourceId+":validate")
+	if err != nil {
+		return nil, fmt.Errorf("error building validate source path: %w", err)
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling payload: %w", err)
+	}
+
+	responseData, err := client.POST(path, bytes.NewReader(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("error validating source: %w", err)
+	}
+
+	var result models.DetailedValidationResult
+
+	if err := json.Unmarshal(responseData, &result); err != nil {
+		return nil, fmt.Errorf("error decoding response data: %w", err)
+	}
+
+	return &result, nil
+}
+
+func (a CatalogManagement) GetPluginSourceRevisions(client httpclient.HTTPClientInterface, basePath string, sourceId string) (*models.RevisionList, error) {
+	path, err := url.JoinPath(basePath, mgmtSourcesPath, sourceId, mgmtRevisionsPath)
+	if err != nil {
+		return nil, fmt.Errorf("error building revisions path: %w", err)
+	}
+
+	responseData, err := client.GET(path)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching source revisions: %w", err)
+	}
+
+	var revisionList models.RevisionList
+
+	if err := json.Unmarshal(responseData, &revisionList); err != nil {
+		return nil, fmt.Errorf("error decoding response data: %w", err)
+	}
+
+	return &revisionList, nil
+}
+
+func (a CatalogManagement) RollbackPluginSource(client httpclient.HTTPClientInterface, basePath string, sourceId string, payload models.RollbackRequest) (*models.RollbackResult, error) {
+	path, err := url.JoinPath(basePath, mgmtSourcesPath, sourceId+":rollback")
+	if err != nil {
+		return nil, fmt.Errorf("error building rollback path: %w", err)
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling payload: %w", err)
+	}
+
+	responseData, err := client.POST(path, bytes.NewReader(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("error rolling back source: %w", err)
+	}
+
+	var result models.RollbackResult
+
+	if err := json.Unmarshal(responseData, &result); err != nil {
+		return nil, fmt.Errorf("error decoding response data: %w", err)
+	}
+
+	return &result, nil
 }
 
 func (a CatalogManagement) ResolvePluginBasePath(client httpclient.HTTPClientInterface, pluginName string) (string, error) {

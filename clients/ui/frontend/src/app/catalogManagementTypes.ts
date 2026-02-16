@@ -25,6 +25,7 @@ export type SourceConfigInput = {
 };
 
 export type ValidationError = {
+  layer?: string;
   field?: string;
   message: string;
 };
@@ -32,6 +33,41 @@ export type ValidationError = {
 export type ValidationResult = {
   valid: boolean;
   errors?: ValidationError[];
+};
+
+export type LayerValidationResult = {
+  layer: string;
+  valid: boolean;
+  errors?: ValidationError[];
+};
+
+export type DetailedValidationResult = {
+  valid: boolean;
+  errors: ValidationError[];
+  warnings?: ValidationError[];
+  layerResults: LayerValidationResult[];
+};
+
+export type ConfigRevision = {
+  version: string;
+  timestamp: string;
+  size: number;
+};
+
+export type RevisionsResponse = {
+  revisions: ConfigRevision[];
+  count: number;
+};
+
+export type ApplyResult = {
+  status: string;
+  refreshResult?: {
+    sourceId: string;
+    entitiesLoaded: number;
+    entitiesRemoved: number;
+    duration: number;
+    error?: string;
+  };
 };
 
 export type RefreshResult = {

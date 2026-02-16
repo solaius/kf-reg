@@ -128,7 +128,31 @@ func TestServerHealthEndpoint(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Contains(t, rec.Body.String(), "ok")
+	assert.Contains(t, rec.Body.String(), "alive")
+
+	Reset()
+}
+
+func TestServerHealthzLivezAlias(t *testing.T) {
+	Reset()
+
+	cfg := &CatalogSourcesConfig{
+		Catalogs: map[string]CatalogSection{},
+	}
+
+	server := NewServer(cfg, []string{}, nil, nil)
+	err := server.Init(context.Background())
+	require.NoError(t, err)
+
+	router := server.MountRoutes()
+
+	// Test /livez
+	req := httptest.NewRequest("GET", "/livez", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), "alive")
 
 	Reset()
 }
@@ -427,15 +451,173 @@ func TestServerReadyEndpointWithFailedPlugin(t *testing.T) {
 	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
 
 	var response struct {
-		Status  string          `json:"status"`
-		Plugins map[string]bool `json:"plugins"`
+		Status     string                       `json:"status"`
+		Components map[string]map[string]string `json:"components"`
 	}
 	err = json.Unmarshal(rec.Body.Bytes(), &response)
 	require.NoError(t, err)
 
 	assert.Equal(t, "not_ready", response.Status)
-	assert.Contains(t, response.Plugins, "broken")
-	assert.False(t, response.Plugins["broken"])
+	assert.Contains(t, response.Components, "plugins")
+	assert.Equal(t, "degraded", response.Components["plugins"]["status"])
+
+	Reset()
+}
+
+func TestServerLivezReturnsAliveAndUptime(t *testing.T) {
+	Reset()
+
+	cfg := &CatalogSourcesConfig{
+		Catalogs: map[string]CatalogSection{},
+	}
+
+	server := NewServer(cfg, []string{}, nil, nil)
+	err := server.Init(context.Background())
+	require.NoError(t, err)
+
+	router := server.MountRoutes()
+
+	req := httptest.NewRequest("GET", "/livez", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+
+	var response map[string]string
+	err = json.Unmarshal(rec.Body.Bytes(), &response)
+	require.NoError(t, err)
+	assert.Equal(t, "alive", response["status"])
+	assert.NotEmpty(t, response["uptime"])
+
+	Reset()
+}
+
+func TestServerReadyEndpointComponentBreakdown(t *testing.T) {
+	Reset()
+
+	plugin := &testPlugin{
+		name:    "test",
+		version: "v1",
+		healthy: true,
+	}
+	Register(plugin)
+
+	cfg := &CatalogSourcesConfig{
+		Catalogs: map[string]CatalogSection{
+			"test": {},
+		},
+	}
+
+	// No DB configured
+	server := NewServer(cfg, []string{}, nil, nil)
+	err := server.Init(context.Background())
+	require.NoError(t, err)
+
+	router := server.MountRoutes()
+
+	req := httptest.NewRequest("GET", "/readyz", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var response struct {
+		Status     string         `json:"status"`
+		Components map[string]any `json:"components"`
+	}
+	err = json.Unmarshal(rec.Body.Bytes(), &response)
+	require.NoError(t, err)
+
+	assert.Equal(t, "ready", response.Status)
+
+	// Verify component structure
+	assert.Contains(t, response.Components, "database")
+	assert.Contains(t, response.Components, "initial_load")
+	assert.Contains(t, response.Components, "plugins")
+
+	// DB should be not_configured when no DB is provided
+	dbComp, ok := response.Components["database"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "not_configured", dbComp["status"])
+
+	// Initial load should be complete after Init
+	loadComp, ok := response.Components["initial_load"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "complete", loadComp["status"])
+
+	// Plugins should be healthy
+	pluginsComp, ok := response.Components["plugins"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "healthy", pluginsComp["status"])
+
+	Reset()
+}
+
+func TestServerHealthzAndLivezAreSameHandler(t *testing.T) {
+	Reset()
+
+	cfg := &CatalogSourcesConfig{
+		Catalogs: map[string]CatalogSection{},
+	}
+
+	server := NewServer(cfg, []string{}, nil, nil)
+	err := server.Init(context.Background())
+	require.NoError(t, err)
+
+	router := server.MountRoutes()
+
+	// Both endpoints should return the same structure
+	for _, path := range []string{"/healthz", "/livez"} {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest("GET", path, nil)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			assert.Equal(t, http.StatusOK, rec.Code)
+
+			var response map[string]string
+			err := json.Unmarshal(rec.Body.Bytes(), &response)
+			require.NoError(t, err)
+			assert.Equal(t, "alive", response["status"])
+			assert.Contains(t, response, "uptime")
+		})
+	}
+
+	Reset()
+}
+
+func TestServerReadyEndpointBeforeInit(t *testing.T) {
+	Reset()
+
+	cfg := &CatalogSourcesConfig{
+		Catalogs: map[string]CatalogSection{},
+	}
+
+	server := NewServer(cfg, []string{}, nil, nil)
+	// Do NOT call Init - simulate pre-init state
+
+	// Manually mount routes to test readyz before init completes
+	router := server.MountRoutes()
+
+	req := httptest.NewRequest("GET", "/readyz", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	// Should be not_ready because initialLoadDone is false
+	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
+
+	var response struct {
+		Status     string         `json:"status"`
+		Components map[string]any `json:"components"`
+	}
+	err := json.Unmarshal(rec.Body.Bytes(), &response)
+	require.NoError(t, err)
+	assert.Equal(t, "not_ready", response.Status)
+
+	loadComp, ok := response.Components["initial_load"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "pending", loadComp["status"])
 
 	Reset()
 }

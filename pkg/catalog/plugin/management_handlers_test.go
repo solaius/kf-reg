@@ -15,11 +15,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// mgmtTestPlugin is a mock plugin implementing management interfaces.
+// mgmtTestPlugin is a mock plugin implementing management interfaces and CatalogPlugin.
 type mgmtTestPlugin struct {
 	sources    []SourceInfo
 	validateFn func(SourceConfigInput) (*ValidationResult, error)
 }
+
+// CatalogPlugin interface methods so mgmtTestPlugin can be passed as CatalogPlugin.
+func (p *mgmtTestPlugin) Name() string                           { return "test" }
+func (p *mgmtTestPlugin) Version() string                        { return "v1" }
+func (p *mgmtTestPlugin) Description() string                    { return "test plugin" }
+func (p *mgmtTestPlugin) Init(_ context.Context, _ Config) error { return nil }
+func (p *mgmtTestPlugin) Start(_ context.Context) error          { return nil }
+func (p *mgmtTestPlugin) Stop(_ context.Context) error           { return nil }
+func (p *mgmtTestPlugin) Healthy() bool                          { return true }
+func (p *mgmtTestPlugin) RegisterRoutes(_ chi.Router) error      { return nil }
+func (p *mgmtTestPlugin) Migrations() []Migration                { return nil }
 
 func (p *mgmtTestPlugin) ListSources(_ context.Context) ([]SourceInfo, error) {
 	return p.sources, nil
@@ -311,3 +322,363 @@ var _ DiagnosticsProvider = (*testMgmtPlugin)(nil)
 
 // suppress unused import warning
 var _ = fmt.Sprintf
+
+// --- Tests for Phase 4 management endpoints ---
+
+func TestDetailedValidateHandler(t *testing.T) {
+	t.Run("valid input returns detailed result", func(t *testing.T) {
+		p := &mgmtTestPlugin{}
+
+		r := chi.NewRouter()
+		r.Post("/sources/{sourceId}:validate", detailedValidateHandler(p))
+
+		body := SourceConfigInput{ID: "test", Name: "Test", Type: "yaml"}
+		bodyBytes, _ := json.Marshal(body)
+		req := httptest.NewRequest("POST", "/sources/test:validate", bytes.NewReader(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		r.ServeHTTP(rr, req)
+
+		assert.Equal(t, http.StatusOK, rr.Code)
+
+		var result DetailedValidationResult
+		err := json.Unmarshal(rr.Body.Bytes(), &result)
+		require.NoError(t, err)
+		assert.True(t, result.Valid)
+		assert.NotEmpty(t, result.LayerResults, "should have per-layer results")
+	})
+
+	t.Run("invalid YAML returns errors in result", func(t *testing.T) {
+		p := &mgmtTestPlugin{}
+
+		r := chi.NewRouter()
+		r.Post("/sources/{sourceId}:validate", detailedValidateHandler(p))
+
+		body := SourceConfigInput{
+			ID:   "test",
+			Name: "Test",
+			Type: "yaml",
+			Properties: map[string]any{
+				"content": "not: [valid: yaml: {{",
+			},
+		}
+		bodyBytes, _ := json.Marshal(body)
+		req := httptest.NewRequest("POST", "/sources/test:validate", bytes.NewReader(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		r.ServeHTTP(rr, req)
+
+		assert.Equal(t, http.StatusOK, rr.Code)
+
+		var result DetailedValidationResult
+		err := json.Unmarshal(rr.Body.Bytes(), &result)
+		require.NoError(t, err)
+		assert.False(t, result.Valid)
+		assert.NotEmpty(t, result.Errors)
+	})
+
+	t.Run("bad JSON body returns 400", func(t *testing.T) {
+		p := &mgmtTestPlugin{}
+
+		r := chi.NewRouter()
+		r.Post("/sources/{sourceId}:validate", detailedValidateHandler(p))
+
+		req := httptest.NewRequest("POST", "/sources/test:validate", bytes.NewReader([]byte("not json")))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		r.ServeHTTP(rr, req)
+
+		assert.Equal(t, http.StatusBadRequest, rr.Code)
+	})
+}
+
+func TestRevisionsHandler(t *testing.T) {
+	t.Run("no config store returns empty list", func(t *testing.T) {
+		handler := revisionsHandler(nil)
+		req := httptest.NewRequest("GET", "/sources/test/revisions", nil)
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+
+		assert.Equal(t, http.StatusOK, rr.Code)
+
+		var result map[string]any
+		err := json.Unmarshal(rr.Body.Bytes(), &result)
+		require.NoError(t, err)
+		assert.Equal(t, float64(0), result["count"])
+		revisions, ok := result["revisions"].([]any)
+		require.True(t, ok)
+		assert.Empty(t, revisions)
+	})
+
+	t.Run("with config store returns revisions", func(t *testing.T) {
+		store := &mockConfigStore{
+			revisions: []ConfigRevision{
+				{Version: "abc123", Size: 100},
+				{Version: "def456", Size: 200},
+			},
+		}
+		cfg := &CatalogSourcesConfig{Catalogs: map[string]CatalogSection{}}
+		srv := NewServer(cfg, nil, nil, nil, WithConfigStore(store))
+
+		handler := revisionsHandler(srv)
+		req := httptest.NewRequest("GET", "/sources/test/revisions", nil)
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+
+		assert.Equal(t, http.StatusOK, rr.Code)
+
+		var result map[string]any
+		err := json.Unmarshal(rr.Body.Bytes(), &result)
+		require.NoError(t, err)
+		assert.Equal(t, float64(2), result["count"])
+	})
+
+	t.Run("server with nil config store returns empty", func(t *testing.T) {
+		cfg := &CatalogSourcesConfig{Catalogs: map[string]CatalogSection{}}
+		srv := NewServer(cfg, nil, nil, nil) // no WithConfigStore
+
+		handler := revisionsHandler(srv)
+		req := httptest.NewRequest("GET", "/sources/test/revisions", nil)
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+
+		assert.Equal(t, http.StatusOK, rr.Code)
+
+		var result map[string]any
+		err := json.Unmarshal(rr.Body.Bytes(), &result)
+		require.NoError(t, err)
+		assert.Equal(t, float64(0), result["count"])
+	})
+}
+
+func TestRollbackHandler(t *testing.T) {
+	t.Run("no config store returns 400", func(t *testing.T) {
+		p := &testMgmtPlugin{}
+		handler := rollbackHandler(nil, "test", p)
+
+		body := `{"version": "abc123"}`
+		req := httptest.NewRequest("POST", "/sources/test:rollback", bytes.NewReader([]byte(body)))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+
+		assert.Equal(t, http.StatusBadRequest, rr.Code)
+	})
+
+	t.Run("missing version returns 400", func(t *testing.T) {
+		store := &mockConfigStore{}
+		cfg := &CatalogSourcesConfig{Catalogs: map[string]CatalogSection{}}
+		srv := NewServer(cfg, nil, nil, nil, WithConfigStore(store))
+
+		p := &testMgmtPlugin{}
+		handler := rollbackHandler(srv, "test", p)
+
+		body := `{}`
+		req := httptest.NewRequest("POST", "/sources/test:rollback", bytes.NewReader([]byte(body)))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+
+		assert.Equal(t, http.StatusBadRequest, rr.Code)
+	})
+
+	t.Run("unknown version returns 404", func(t *testing.T) {
+		store := &mockConfigStore{
+			rollbackErr: ErrRevisionNotFound,
+		}
+		cfg := &CatalogSourcesConfig{Catalogs: map[string]CatalogSection{}}
+		srv := NewServer(cfg, nil, nil, nil, WithConfigStore(store))
+
+		p := &testMgmtPlugin{}
+		handler := rollbackHandler(srv, "test", p)
+
+		body := `{"version": "nonexistent"}`
+		req := httptest.NewRequest("POST", "/sources/test:rollback", bytes.NewReader([]byte(body)))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+
+		assert.Equal(t, http.StatusNotFound, rr.Code)
+	})
+
+	t.Run("version conflict returns 409", func(t *testing.T) {
+		store := &mockConfigStore{
+			rollbackErr: ErrVersionConflict,
+		}
+		cfg := &CatalogSourcesConfig{Catalogs: map[string]CatalogSection{}}
+		srv := NewServer(cfg, nil, nil, nil, WithConfigStore(store))
+
+		p := &testMgmtPlugin{}
+		handler := rollbackHandler(srv, "test", p)
+
+		body := `{"version": "abc123"}`
+		req := httptest.NewRequest("POST", "/sources/test:rollback", bytes.NewReader([]byte(body)))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+
+		assert.Equal(t, http.StatusConflict, rr.Code)
+	})
+
+	t.Run("successful rollback returns 200", func(t *testing.T) {
+		restoredCfg := &CatalogSourcesConfig{
+			Catalogs: map[string]CatalogSection{
+				"test": {Sources: []SourceConfig{{ID: "restored"}}},
+			},
+		}
+		store := &mockConfigStore{
+			rollbackCfg:     restoredCfg,
+			rollbackVersion: "newver",
+		}
+		cfg := &CatalogSourcesConfig{Catalogs: map[string]CatalogSection{}}
+		srv := NewServer(cfg, nil, nil, nil, WithConfigStore(store))
+
+		p := &testMgmtPlugin{}
+		handler := rollbackHandler(srv, "test", p)
+
+		body := `{"version": "abc123"}`
+		req := httptest.NewRequest("POST", "/sources/test:rollback", bytes.NewReader([]byte(body)))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+
+		assert.Equal(t, http.StatusOK, rr.Code)
+
+		var result map[string]any
+		err := json.Unmarshal(rr.Body.Bytes(), &result)
+		require.NoError(t, err)
+		assert.Equal(t, "rolled_back", result["status"])
+		assert.Equal(t, "newver", result["version"])
+	})
+
+	t.Run("bad JSON body returns 400", func(t *testing.T) {
+		store := &mockConfigStore{}
+		cfg := &CatalogSourcesConfig{Catalogs: map[string]CatalogSection{}}
+		srv := NewServer(cfg, nil, nil, nil, WithConfigStore(store))
+
+		p := &testMgmtPlugin{}
+		handler := rollbackHandler(srv, "test", p)
+
+		req := httptest.NewRequest("POST", "/sources/test:rollback", bytes.NewReader([]byte("not json")))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+
+		assert.Equal(t, http.StatusBadRequest, rr.Code)
+	})
+}
+
+func TestApplyHandler_ValidationRejects(t *testing.T) {
+	t.Run("invalid input returns 422 with validation result", func(t *testing.T) {
+		p := &testMgmtPlugin{}
+		handler := applyHandler(p, nil, "test", p)
+
+		// Send input with no ID, name, type to trigger semantic validation failure.
+		body := SourceConfigInput{
+			Properties: map[string]any{
+				"content": "not: [valid: yaml: {{",
+			},
+		}
+		bodyBytes, _ := json.Marshal(body)
+		req := httptest.NewRequest("POST", "/apply-source", bytes.NewReader(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+
+		assert.Equal(t, http.StatusUnprocessableEntity, rr.Code)
+
+		var result DetailedValidationResult
+		err := json.Unmarshal(rr.Body.Bytes(), &result)
+		require.NoError(t, err)
+		assert.False(t, result.Valid)
+		assert.NotEmpty(t, result.Errors)
+	})
+
+	t.Run("valid input is applied successfully", func(t *testing.T) {
+		p := &testMgmtPlugin{}
+		handler := applyHandler(p, nil, "test", p)
+
+		body := SourceConfigInput{ID: "test-src", Name: "Test Source", Type: "yaml"}
+		bodyBytes, _ := json.Marshal(body)
+		req := httptest.NewRequest("POST", "/apply-source", bytes.NewReader(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+
+		assert.Equal(t, http.StatusOK, rr.Code)
+
+		var result map[string]any
+		err := json.Unmarshal(rr.Body.Bytes(), &result)
+		require.NoError(t, err)
+		assert.Equal(t, "applied", result["status"])
+	})
+
+	t.Run("bad JSON returns 400", func(t *testing.T) {
+		p := &testMgmtPlugin{}
+		handler := applyHandler(p, nil, "test", p)
+
+		req := httptest.NewRequest("POST", "/apply-source", bytes.NewReader([]byte("not json")))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+
+		assert.Equal(t, http.StatusBadRequest, rr.Code)
+	})
+}
+
+func TestRefreshRateLimitedHandler(t *testing.T) {
+	p := &mgmtTestPlugin{}
+	rl := NewRefreshRateLimiter(1 * time.Hour) // very long window
+
+	handler := refreshAllHandler(p, rl, "test")
+
+	// First call should succeed.
+	req1 := httptest.NewRequest("POST", "/refresh", nil)
+	rr1 := httptest.NewRecorder()
+	handler.ServeHTTP(rr1, req1)
+	assert.Equal(t, http.StatusOK, rr1.Code)
+
+	// Second call should be rate limited.
+	req2 := httptest.NewRequest("POST", "/refresh", nil)
+	rr2 := httptest.NewRecorder()
+	handler.ServeHTTP(rr2, req2)
+	assert.Equal(t, http.StatusTooManyRequests, rr2.Code)
+	assert.NotEmpty(t, rr2.Header().Get("Retry-After"))
+}
+
+// --- Mock ConfigStore for handler tests ---
+
+type mockConfigStore struct {
+	revisions       []ConfigRevision
+	rollbackCfg     *CatalogSourcesConfig
+	rollbackVersion string
+	rollbackErr     error
+}
+
+func (m *mockConfigStore) Load(_ context.Context) (*CatalogSourcesConfig, string, error) {
+	return &CatalogSourcesConfig{Catalogs: map[string]CatalogSection{}}, "v1", nil
+}
+
+func (m *mockConfigStore) Save(_ context.Context, _ *CatalogSourcesConfig, _ string) (string, error) {
+	return "v2", nil
+}
+
+func (m *mockConfigStore) Watch(_ context.Context) (<-chan ConfigChangeEvent, error) {
+	return nil, nil
+}
+
+func (m *mockConfigStore) ListRevisions(_ context.Context) ([]ConfigRevision, error) {
+	if m.revisions == nil {
+		return []ConfigRevision{}, nil
+	}
+	return m.revisions, nil
+}
+
+func (m *mockConfigStore) Rollback(_ context.Context, _ string) (*CatalogSourcesConfig, string, error) {
+	if m.rollbackErr != nil {
+		return nil, "", m.rollbackErr
+	}
+	return m.rollbackCfg, m.rollbackVersion, nil
+}
+
+var _ ConfigStore = (*mockConfigStore)(nil)
