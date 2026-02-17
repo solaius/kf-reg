@@ -32,8 +32,12 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -buildvc
 # Build healthcheck binary
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -buildvcs=false -o healthcheck ./cmd/healthcheck
 
-# Runtime image
-FROM gcr.io/distroless/static:nonroot
+# Runtime image (alpine for git provider support)
+FROM alpine:3.21
+RUN apk add --no-cache git ca-certificates && \
+    adduser -D -u 65532 nonroot && \
+    mkdir -p /home/nonroot && \
+    git config --system --add safe.directory '*'
 WORKDIR /
 
 COPY --from=builder /workspace/catalog-server .
@@ -45,7 +49,7 @@ COPY catalog/config/ /config/
 COPY catalog/plugins/mcp/data/ /plugins/mcp/data/
 COPY catalog/plugins/knowledge/data/ /plugins/knowledge/data/
 
-USER 65532:65532
+USER nonroot
 
 EXPOSE 8080
 

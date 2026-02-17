@@ -1,0 +1,218 @@
+policies:
+  - name: model-access-control
+    description: "Controls which users and groups can access specific models"
+    policyType: access_control
+    language: rego
+    bundleRef: "oci://registry.example.com/policies/model-access:v1.0"
+    entrypoint: "data.model_access.allow"
+    enforcementScope: organization
+    enforcementMode: enforce
+    version: "1.0.0"
+    author: "Security Team"
+    license: "Apache-2.0"
+    inputSchema:
+      type: object
+      properties:
+        user:
+          type: string
+        model:
+          type: string
+        action:
+          type: string
+      required: ["user", "model", "action"]
+
+  - name: data-residency
+    description: "Ensures model data stays within approved geographic regions"
+    policyType: data_governance
+    language: rego
+    bundleRef: "oci://registry.example.com/policies/data-residency:v2.1"
+    entrypoint: "data.residency.compliant"
+    enforcementScope: organization
+    enforcementMode: enforce
+    version: "2.1.0"
+    author: "Compliance Team"
+    license: "Apache-2.0"
+    inputSchema:
+      type: object
+      properties:
+        dataLocation:
+          type: string
+        allowedRegions:
+          type: array
+          items:
+            type: string
+      required: ["dataLocation", "allowedRegions"]
+
+  - name: tool-allowlist
+    description: "Restricts which external tools agents are permitted to invoke"
+    policyType: tool_allowlist
+    language: yaml_rules
+    bundleRef: "oci://registry.example.com/policies/tool-allowlist:v1.3"
+    entrypoint: "rules.tool_allowed"
+    enforcementScope: agent
+    enforcementMode: enforce
+    version: "1.3.0"
+    author: "Platform Team"
+    license: "Apache-2.0"
+    inputSchema:
+      type: object
+      properties:
+        toolName:
+          type: string
+        agentId:
+          type: string
+      required: ["toolName", "agentId"]
+
+  - name: model-allowlist
+    description: "Controls which foundation models can be used in production pipelines"
+    policyType: model_allowlist
+    language: yaml_rules
+    bundleRef: "oci://registry.example.com/policies/model-allowlist:v1.0"
+    entrypoint: "rules.model_permitted"
+    enforcementScope: project
+    enforcementMode: enforce
+    version: "1.0.0"
+    author: "ML Engineering"
+    license: "Apache-2.0"
+    inputSchema:
+      type: object
+      properties:
+        modelName:
+          type: string
+        modelProvider:
+          type: string
+        environment:
+          type: string
+      required: ["modelName"]
+
+  - name: pii-data-governance
+    description: "Prevents models from processing or storing personally identifiable information without consent"
+    policyType: data_governance
+    language: rego
+    bundleRef: "oci://registry.example.com/policies/pii-governance:v3.0"
+    entrypoint: "data.pii.allowed"
+    enforcementScope: namespace
+    enforcementMode: enforce
+    version: "3.0.0"
+    author: "Privacy Team"
+    license: "Apache-2.0"
+    inputSchema:
+      type: object
+      properties:
+        dataClassification:
+          type: string
+        consentGranted:
+          type: boolean
+        purpose:
+          type: string
+      required: ["dataClassification", "consentGranted"]
+
+  - name: safety-rating-threshold
+    description: "Blocks deployment of models that do not meet minimum safety evaluation scores"
+    policyType: safety
+    language: cel
+    bundleRef: "oci://registry.example.com/policies/safety-threshold:v1.2"
+    entrypoint: "model.safety_score >= threshold"
+    enforcementScope: organization
+    enforcementMode: enforce
+    version: "1.2.0"
+    author: "AI Safety Team"
+    license: "Apache-2.0"
+    inputSchema:
+      type: object
+      properties:
+        safetyScore:
+          type: number
+        threshold:
+          type: number
+        modelCategory:
+          type: string
+      required: ["safetyScore", "threshold"]
+
+  - name: compliance-audit-logging
+    description: "Ensures all model inference requests are logged for regulatory audit trails"
+    policyType: compliance
+    language: rego
+    bundleRef: "oci://registry.example.com/policies/audit-logging:v2.0"
+    entrypoint: "data.audit.logging_enabled"
+    enforcementScope: organization
+    enforcementMode: audit
+    version: "2.0.0"
+    author: "Compliance Team"
+    license: "Apache-2.0"
+    inputSchema:
+      type: object
+      properties:
+        serviceName:
+          type: string
+        loggingEnabled:
+          type: boolean
+        retentionDays:
+          type: integer
+      required: ["serviceName", "loggingEnabled"]
+
+  - name: namespace-resource-quota
+    description: "Limits compute resources available to model serving workloads per namespace"
+    policyType: data_governance
+    language: json_rules
+    bundleRef: "oci://registry.example.com/policies/resource-quota:v1.1"
+    entrypoint: "rules.within_quota"
+    enforcementScope: namespace
+    enforcementMode: enforce
+    version: "1.1.0"
+    author: "Platform Team"
+    license: "Apache-2.0"
+    inputSchema:
+      type: object
+      properties:
+        namespace:
+          type: string
+        requestedGPUs:
+          type: integer
+        requestedMemoryGB:
+          type: number
+      required: ["namespace", "requestedGPUs"]
+
+  - name: agent-permission-boundary
+    description: "Defines maximum permission boundaries for autonomous AI agents"
+    policyType: access_control
+    language: rego
+    bundleRef: "oci://registry.example.com/policies/agent-boundary:v1.0"
+    entrypoint: "data.agent.within_boundary"
+    enforcementScope: agent
+    enforcementMode: enforce
+    version: "1.0.0"
+    author: "Security Team"
+    license: "Apache-2.0"
+    inputSchema:
+      type: object
+      properties:
+        agentId:
+          type: string
+        requestedAction:
+          type: string
+        targetResource:
+          type: string
+      required: ["agentId", "requestedAction"]
+
+  - name: prompt-length-limit
+    description: "Enforces maximum prompt and context window sizes to control costs and prevent abuse"
+    policyType: safety
+    language: cel
+    bundleRef: "oci://registry.example.com/policies/prompt-limit:v1.0"
+    entrypoint: "prompt.token_count <= max_tokens"
+    enforcementScope: project
+    enforcementMode: dry-run
+    version: "1.0.0"
+    author: "Platform Team"
+    license: "Apache-2.0"
+    inputSchema:
+      type: object
+      properties:
+        tokenCount:
+          type: integer
+        maxTokens:
+          type: integer
+        modelName:
+          type: string
+      required: ["tokenCount", "maxTokens"]

@@ -26,8 +26,15 @@ services:
       - --db-dsn=postgres://catalog:catalog@postgres:5432/catalog?sslmode=disable
     volumes:
       - ./catalog/config:/config:ro
+      - ./catalog/plugins/model/data:/plugins/model/data:ro
       - ./catalog/plugins/mcp/data:/plugins/mcp/data:rw
       - ./catalog/plugins/knowledge/data:/plugins/knowledge/data:ro
+      - ./catalog/plugins/prompts/data:/plugins/prompts/data:ro
+      - ./catalog/plugins/agents/data:/plugins/agents/data:ro
+      - ./catalog/sample-repos/agents-repo:/sample-repos/agents-repo:ro
+      - ./catalog/plugins/guardrails/data:/plugins/guardrails/data:ro
+      - ./catalog/plugins/policies/data:/plugins/policies/data:ro
+      - ./catalog/plugins/skills/data:/plugins/skills/data:ro
     depends_on:
       postgres:
         condition: service_healthy

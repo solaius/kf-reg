@@ -1,0 +1,534 @@
+skills:
+  - name: web-search
+    description: "Search the web using a search engine API"
+    skillType: mcp_tool
+    inputSchema:
+      type: object
+      properties:
+        query:
+          type: string
+          description: "Search query"
+        maxResults:
+          type: integer
+          default: 10
+      required: ["query"]
+    outputSchema:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              title: { type: string }
+              url: { type: string }
+              snippet: { type: string }
+    execution:
+      executorType: mcp_tool
+      mcpServerRef: "brave-search"
+      toolName: "brave_web_search"
+    safety:
+      requiresApproval: false
+      riskLevel: low
+      networkAccessRequired: true
+    timeoutSeconds: 30
+    version: "1.0.0"
+    author: "Platform Team"
+    license: "Apache-2.0"
+
+  - name: file-read
+    description: "Read contents of a file from the local filesystem"
+    skillType: mcp_tool
+    inputSchema:
+      type: object
+      properties:
+        path:
+          type: string
+          description: "Absolute path to the file"
+        encoding:
+          type: string
+          default: "utf-8"
+      required: ["path"]
+    outputSchema:
+      type: object
+      properties:
+        content:
+          type: string
+        size:
+          type: integer
+    execution:
+      executorType: mcp_tool
+      mcpServerRef: "filesystem"
+      toolName: "read_file"
+    safety:
+      requiresApproval: false
+      riskLevel: low
+      networkAccessRequired: false
+      allowedNamespaces: ["default"]
+    timeoutSeconds: 10
+    version: "1.0.0"
+    author: "Platform Team"
+    license: "Apache-2.0"
+
+  - name: database-query
+    description: "Execute a read-only SQL query against a configured database"
+    skillType: openapi_operation
+    inputSchema:
+      type: object
+      properties:
+        query:
+          type: string
+          description: "SQL SELECT query to execute"
+        database:
+          type: string
+          description: "Target database identifier"
+        maxRows:
+          type: integer
+          default: 100
+      required: ["query", "database"]
+    outputSchema:
+      type: object
+      properties:
+        columns:
+          type: array
+          items: { type: string }
+        rows:
+          type: array
+          items:
+            type: array
+        rowCount:
+          type: integer
+    execution:
+      executorType: openapi_operation
+      openapiRef: "data-service"
+      operationId: "executeQuery"
+      baseUrl: "https://data-api.internal.example.com/v1"
+    safety:
+      requiresApproval: false
+      riskLevel: medium
+      networkAccessRequired: true
+      secretRefs: ["db-credentials"]
+    rateLimit:
+      maxCallsPerMinute: 30
+      maxConcurrent: 5
+    timeoutSeconds: 60
+    version: "2.1.0"
+    author: "Data Engineering"
+    license: "Proprietary"
+
+  - name: k8s-pod-logs
+    description: "Retrieve logs from a Kubernetes pod"
+    skillType: k8s_action
+    inputSchema:
+      type: object
+      properties:
+        namespace:
+          type: string
+          description: "Kubernetes namespace"
+        podName:
+          type: string
+          description: "Name of the pod"
+        container:
+          type: string
+          description: "Container name (optional)"
+        tailLines:
+          type: integer
+          default: 100
+      required: ["namespace", "podName"]
+    outputSchema:
+      type: object
+      properties:
+        logs:
+          type: string
+        containerName:
+          type: string
+    execution:
+      executorType: k8s_action
+      apiGroup: ""
+      resource: "pods"
+      subresource: "log"
+      verb: "get"
+    safety:
+      requiresApproval: false
+      riskLevel: low
+      networkAccessRequired: true
+      allowedNamespaces: ["default", "production", "staging"]
+    timeoutSeconds: 30
+    version: "1.0.0"
+    author: "Platform Team"
+    license: "Apache-2.0"
+
+  - name: run-pytest
+    description: "Execute pytest test suite in a sandboxed environment"
+    skillType: shell_command
+    inputSchema:
+      type: object
+      properties:
+        testPath:
+          type: string
+          description: "Path to test file or directory"
+        markers:
+          type: string
+          description: "Pytest marker expression (e.g. 'not slow')"
+        verbose:
+          type: boolean
+          default: true
+      required: ["testPath"]
+    outputSchema:
+      type: object
+      properties:
+        exitCode:
+          type: integer
+        stdout:
+          type: string
+        stderr:
+          type: string
+        summary:
+          type: object
+          properties:
+            passed: { type: integer }
+            failed: { type: integer }
+            skipped: { type: integer }
+    execution:
+      executorType: shell_command
+      command: "pytest"
+      args: ["--tb=short", "--no-header"]
+      workingDir: "/workspace"
+      env:
+        PYTHONDONTWRITEBYTECODE: "1"
+    safety:
+      requiresApproval: true
+      riskLevel: high
+      networkAccessRequired: false
+    retryPolicy:
+      maxRetries: 2
+      backoffSeconds: 5
+    timeoutSeconds: 300
+    version: "1.2.0"
+    author: "QA Team"
+    license: "Apache-2.0"
+
+  - name: code-formatter
+    description: "Format source code using language-appropriate formatters"
+    skillType: shell_command
+    inputSchema:
+      type: object
+      properties:
+        filePath:
+          type: string
+          description: "Path to the file to format"
+        language:
+          type: string
+          enum: ["python", "go", "javascript", "typescript"]
+        dryRun:
+          type: boolean
+          default: false
+      required: ["filePath", "language"]
+    outputSchema:
+      type: object
+      properties:
+        formatted:
+          type: boolean
+        diff:
+          type: string
+    execution:
+      executorType: shell_command
+      command: "format-runner"
+      args: ["--check"]
+    safety:
+      requiresApproval: false
+      riskLevel: medium
+      networkAccessRequired: false
+    timeoutSeconds: 30
+    version: "1.0.0"
+    author: "Developer Experience"
+    license: "MIT"
+
+  - name: api-health-check
+    description: "Check the health status of an API endpoint"
+    skillType: openapi_operation
+    inputSchema:
+      type: object
+      properties:
+        url:
+          type: string
+          description: "URL of the health endpoint"
+        expectedStatus:
+          type: integer
+          default: 200
+        timeout:
+          type: integer
+          default: 5
+      required: ["url"]
+    outputSchema:
+      type: object
+      properties:
+        healthy:
+          type: boolean
+        statusCode:
+          type: integer
+        responseTimeMs:
+          type: integer
+        body:
+          type: object
+    execution:
+      executorType: openapi_operation
+      openapiRef: "monitoring-service"
+      operationId: "healthCheck"
+      baseUrl: "https://monitor.internal.example.com/api"
+    safety:
+      requiresApproval: false
+      riskLevel: low
+      networkAccessRequired: true
+    rateLimit:
+      maxCallsPerMinute: 60
+      maxConcurrent: 10
+    timeoutSeconds: 10
+    version: "1.0.0"
+    author: "SRE Team"
+    license: "Apache-2.0"
+
+  - name: send-notification
+    description: "Send a notification message via configured channels"
+    skillType: mcp_tool
+    inputSchema:
+      type: object
+      properties:
+        channel:
+          type: string
+          enum: ["slack", "email", "pagerduty"]
+        recipient:
+          type: string
+          description: "Channel or email address"
+        message:
+          type: string
+          description: "Notification message body"
+        severity:
+          type: string
+          enum: ["info", "warning", "critical"]
+          default: "info"
+      required: ["channel", "recipient", "message"]
+    outputSchema:
+      type: object
+      properties:
+        sent:
+          type: boolean
+        messageId:
+          type: string
+        timestamp:
+          type: string
+    execution:
+      executorType: mcp_tool
+      mcpServerRef: "notification-hub"
+      toolName: "send_notification"
+    safety:
+      requiresApproval: false
+      riskLevel: low
+      networkAccessRequired: true
+    rateLimit:
+      maxCallsPerMinute: 10
+      maxConcurrent: 3
+    timeoutSeconds: 15
+    version: "1.1.0"
+    author: "Platform Team"
+    license: "Apache-2.0"
+
+  - name: image-resize
+    description: "Resize an image to specified dimensions"
+    skillType: shell_command
+    inputSchema:
+      type: object
+      properties:
+        inputPath:
+          type: string
+          description: "Path to the source image"
+        outputPath:
+          type: string
+          description: "Path for the resized image"
+        width:
+          type: integer
+          description: "Target width in pixels"
+        height:
+          type: integer
+          description: "Target height in pixels"
+        quality:
+          type: integer
+          default: 85
+      required: ["inputPath", "outputPath", "width", "height"]
+    outputSchema:
+      type: object
+      properties:
+        outputPath:
+          type: string
+        originalSize:
+          type: object
+          properties:
+            width: { type: integer }
+            height: { type: integer }
+        newSize:
+          type: object
+          properties:
+            width: { type: integer }
+            height: { type: integer }
+    execution:
+      executorType: shell_command
+      command: "convert"
+      args: ["-resize"]
+    safety:
+      requiresApproval: false
+      riskLevel: low
+      networkAccessRequired: false
+    timeoutSeconds: 60
+    version: "1.0.0"
+    author: "Media Team"
+    license: "MIT"
+
+  - name: git-commit-info
+    description: "Retrieve detailed information about a git commit"
+    skillType: shell_command
+    inputSchema:
+      type: object
+      properties:
+        repoPath:
+          type: string
+          description: "Path to the git repository"
+        commitSha:
+          type: string
+          description: "Full or short commit SHA"
+        includeStats:
+          type: boolean
+          default: true
+      required: ["repoPath", "commitSha"]
+    outputSchema:
+      type: object
+      properties:
+        sha:
+          type: string
+        author:
+          type: string
+        date:
+          type: string
+        message:
+          type: string
+        filesChanged:
+          type: integer
+        insertions:
+          type: integer
+        deletions:
+          type: integer
+    execution:
+      executorType: shell_command
+      command: "git"
+      args: ["show", "--stat", "--format=json"]
+    safety:
+      requiresApproval: false
+      riskLevel: medium
+      networkAccessRequired: false
+    timeoutSeconds: 15
+    version: "1.0.0"
+    author: "Developer Experience"
+    license: "Apache-2.0"
+
+  - name: vector-store-query
+    description: "Query a vector store for semantically similar documents"
+    skillType: mcp_tool
+    inputSchema:
+      type: object
+      properties:
+        query:
+          type: string
+          description: "Natural language query for semantic search"
+        collection:
+          type: string
+          description: "Vector store collection name"
+        topK:
+          type: integer
+          default: 5
+        scoreThreshold:
+          type: number
+          default: 0.7
+      required: ["query", "collection"]
+    outputSchema:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              content: { type: string }
+              score: { type: number }
+              metadata: { type: object }
+    execution:
+      executorType: mcp_tool
+      mcpServerRef: "qdrant-server"
+      toolName: "vector_search"
+    safety:
+      requiresApproval: false
+      riskLevel: low
+      networkAccessRequired: true
+    rateLimit:
+      maxCallsPerMinute: 60
+      maxConcurrent: 10
+    timeoutSeconds: 20
+    version: "1.0.0"
+    author: "ML Platform Team"
+    license: "Apache-2.0"
+
+  - name: deploy-model
+    description: "Deploy a machine learning model to a Kubernetes serving endpoint"
+    skillType: k8s_action
+    inputSchema:
+      type: object
+      properties:
+        modelName:
+          type: string
+          description: "Name of the model to deploy"
+        modelVersion:
+          type: string
+          description: "Version tag of the model"
+        namespace:
+          type: string
+          default: "model-serving"
+        replicas:
+          type: integer
+          default: 1
+        resources:
+          type: object
+          properties:
+            cpu: { type: string, default: "1" }
+            memory: { type: string, default: "2Gi" }
+            gpu: { type: integer, default: 0 }
+      required: ["modelName", "modelVersion"]
+    outputSchema:
+      type: object
+      properties:
+        deploymentName:
+          type: string
+        endpoint:
+          type: string
+        status:
+          type: string
+        replicas:
+          type: integer
+    execution:
+      executorType: k8s_action
+      apiGroup: "serving.kubeflow.org"
+      resource: "inferenceservices"
+      verb: "create"
+    safety:
+      requiresApproval: true
+      riskLevel: high
+      networkAccessRequired: true
+      secretRefs: ["model-registry-creds", "serving-sa-token"]
+      allowedNamespaces: ["model-serving", "staging"]
+    retryPolicy:
+      maxRetries: 3
+      backoffSeconds: 10
+    timeoutSeconds: 120
+    version: "2.0.0"
+    author: "ML Platform Team"
+    license: "Apache-2.0"
+    compatibility:
+      supportedEnvironments: ["kubernetes", "openshift"]

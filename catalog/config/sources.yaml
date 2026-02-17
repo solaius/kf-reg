@@ -1,6 +1,32 @@
 apiVersion: catalog/v1alpha1
 kind: CatalogSources
 catalogs:
+  models:
+    sources:
+      - id: organization_ai_models
+        name: "Organization AI Models"
+        type: yaml
+        enabled: true
+        labels:
+          - Organization AI
+        properties:
+          yamlCatalogPath: "../plugins/model/data/dev-organization-models.yaml"
+      - id: validated_ai_models
+        name: "Validated AI Models"
+        type: yaml
+        enabled: true
+        labels:
+          - Validated AI
+        properties:
+          yamlCatalogPath: "../plugins/model/data/dev-validated-models.yaml"
+      - id: community_custom_models
+        name: "Community and Custom Models"
+        type: yaml
+        enabled: true
+        labels:
+          - Community and Custom
+        properties:
+          yamlCatalogPath: "../plugins/model/data/dev-community-models.yaml"
   mcp:
     sources:
       - id: mcp-default
@@ -20,3 +46,58 @@ catalogs:
         labels: ["Knowledge Sources"]
         properties:
           yamlCatalogPath: "../plugins/knowledge/data/sample-knowledge-sources.yaml"
+  prompts:
+    sources:
+      - id: prompts-default
+        name: "Prompt Templates"
+        type: yaml
+        enabled: true
+        labels: ["Prompt Templates"]
+        properties:
+          yamlCatalogPath: "../plugins/prompts/data/sample-prompts.yaml"
+  agents:
+    sources:
+      - id: agents-default
+        name: "Sample Agents"
+        type: yaml
+        enabled: true
+        labels: ["Agents"]
+        properties:
+          yamlCatalogPath: "../plugins/agents/data/sample-agents.yaml"
+      - id: agents-git
+        name: "Git Agent Repository"
+        type: git
+        enabled: true
+        labels: ["Agents", "Git"]
+        properties:
+          repoUrl: "file:///sample-repos/agents-repo"
+          branch: "main"
+          path: "**/*.yaml"
+          syncInterval: "1h"
+  guardrails:
+    sources:
+      - id: guardrails-default
+        name: "Guardrails"
+        type: yaml
+        enabled: true
+        labels: ["Guardrails"]
+        properties:
+          yamlCatalogPath: "../plugins/guardrails/data/sample-guardrails.yaml"
+  policies:
+    sources:
+      - id: policies-default
+        name: "Policies"
+        type: yaml
+        enabled: true
+        labels: ["Policies"]
+        properties:
+          yamlCatalogPath: "../plugins/policies/data/sample-policies.yaml"
+  skills:
+    sources:
+      - id: skills-default
+        name: "Skills"
+        type: yaml
+        enabled: true
+        labels: ["Skills"]
+        properties:
+          yamlCatalogPath: "../plugins/skills/data/sample-skills.yaml"

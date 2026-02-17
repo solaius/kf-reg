@@ -25,9 +25,13 @@ import (
 
 	// Import plugins - their init() registers them
 	_ "github.com/kubeflow/model-registry/catalog/plugins/model"
-	_ "github.com/kubeflow/model-registry/catalog/plugins/mcp"       // generated via catalog-gen
-	_ "github.com/kubeflow/model-registry/catalog/plugins/knowledge" // knowledge sources plugin
-
+	_ "github.com/kubeflow/model-registry/catalog/plugins/mcp"        // generated via catalog-gen
+	_ "github.com/kubeflow/model-registry/catalog/plugins/knowledge"  // knowledge sources plugin
+	_ "github.com/kubeflow/model-registry/catalog/plugins/prompts"    // prompt templates plugin
+	_ "github.com/kubeflow/model-registry/catalog/plugins/agents"     // agents catalog plugin
+	_ "github.com/kubeflow/model-registry/catalog/plugins/guardrails" // guardrails plugin
+	_ "github.com/kubeflow/model-registry/catalog/plugins/policies"   // policies plugin
+	_ "github.com/kubeflow/model-registry/catalog/plugins/skills"     // skills plugin
 )
 
 func main() {

@@ -1,0 +1,521 @@
+prompttemplates:
+  - name: code-review-assistant
+    description: "Analyzes code changes and provides structured review feedback on correctness, performance, and style"
+    format: chat_messages
+    template: |
+      You are an expert code reviewer. Review the following code changes and provide feedback on:
+      1. Correctness - Are there any bugs or logic errors?
+      2. Performance - Are there any performance concerns?
+      3. Style - Does the code follow best practices and conventions?
+      4. Security - Are there any security vulnerabilities?
+
+      Language: {{language}}
+      Code diff:
+      {{diff}}
+
+      Provide your review in a structured format with severity levels (critical, warning, suggestion).
+    taskTags: ["code-review", "development"]
+    version: "1.0.0"
+    author: "Platform Team"
+    license: "Apache-2.0"
+    parametersSchema:
+      type: object
+      properties:
+        language:
+          type: string
+          description: "Programming language of the code"
+        diff:
+          type: string
+          description: "The code diff to review"
+      required: ["diff"]
+    modelConstraints:
+      compatibleModelFamilies: ["gpt-4", "claude", "llama"]
+      minContextTokens: 4096
+
+  - name: text-summarizer
+    description: "Generates concise summaries of long-form text content with configurable length and style"
+    format: completion
+    template: |
+      Summarize the following text in {{style}} style. The summary should be approximately {{length}} words.
+
+      Text to summarize:
+      {{text}}
+
+      Summary:
+    taskTags: ["summarization", "content"]
+    version: "2.1.0"
+    author: "NLP Team"
+    license: "Apache-2.0"
+    parametersSchema:
+      type: object
+      properties:
+        text:
+          type: string
+          description: "The text to summarize"
+        style:
+          type: string
+          enum: ["concise", "detailed", "bullet-points", "executive"]
+          default: "concise"
+        length:
+          type: integer
+          description: "Target summary length in words"
+          default: 100
+      required: ["text"]
+    outputSchema:
+      type: object
+      properties:
+        summary:
+          type: string
+    examples:
+      - inputs:
+          text: "The quick brown fox jumps over the lazy dog. This sentence contains every letter of the alphabet."
+          style: "concise"
+          length: 20
+        expectedOutput: "A pangram sentence featuring a fox and dog that uses all 26 English alphabet letters."
+
+  - name: language-translator
+    description: "Translates text between languages while preserving tone, context, and formatting"
+    format: chat_messages
+    template: |
+      Translate the following text from {{source_language}} to {{target_language}}.
+      Preserve the original tone, formatting, and any technical terminology.
+      If there are culturally specific references, provide a brief note in brackets.
+
+      Text:
+      {{text}}
+    taskTags: ["translation", "localization"]
+    version: "1.2.0"
+    author: "Localization Team"
+    license: "Apache-2.0"
+    parametersSchema:
+      type: object
+      properties:
+        text:
+          type: string
+          description: "Text to translate"
+        source_language:
+          type: string
+          description: "Source language (e.g., English, Spanish)"
+        target_language:
+          type: string
+          description: "Target language (e.g., French, Japanese)"
+      required: ["text", "source_language", "target_language"]
+    modelConstraints:
+      compatibleModelFamilies: ["gpt-4", "claude"]
+      minContextTokens: 2048
+
+  - name: data-extraction
+    description: "Extracts structured data from unstructured text according to a provided schema"
+    format: jinja2
+    template: |
+      Extract the following information from the provided text and return it as valid JSON.
+
+      Schema:
+      {% for field in fields %}
+      - {{ field.name }} ({{ field.type }}): {{ field.description }}
+      {% endfor %}
+
+      Text:
+      {{ text }}
+
+      Return ONLY valid JSON matching the schema above.
+    taskTags: ["extraction", "data-processing"]
+    version: "1.0.0"
+    author: "Data Engineering"
+    license: "MIT"
+    parametersSchema:
+      type: object
+      properties:
+        text:
+          type: string
+          description: "Unstructured text to extract data from"
+        fields:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              type:
+                type: string
+              description:
+                type: string
+          description: "Schema fields to extract"
+      required: ["text", "fields"]
+    outputSchema:
+      type: object
+      additionalProperties: true
+
+  - name: sentiment-analysis
+    description: "Analyzes sentiment of text and provides detailed emotional tone breakdown"
+    format: completion
+    template: |
+      Analyze the sentiment of the following text. Provide:
+      1. Overall sentiment (positive, negative, neutral, mixed)
+      2. Confidence score (0.0 to 1.0)
+      3. Emotional tones detected (e.g., joy, anger, frustration, excitement)
+      4. Key phrases that influenced the analysis
+
+      Text: {{text}}
+
+      Return the analysis as structured JSON.
+    taskTags: ["sentiment-analysis", "nlp"]
+    version: "1.1.0"
+    author: "NLP Team"
+    license: "Apache-2.0"
+    parametersSchema:
+      type: object
+      properties:
+        text:
+          type: string
+          description: "Text to analyze"
+      required: ["text"]
+    outputSchema:
+      type: object
+      properties:
+        sentiment:
+          type: string
+          enum: ["positive", "negative", "neutral", "mixed"]
+        confidence:
+          type: number
+        tones:
+          type: array
+          items:
+            type: string
+        keyPhrases:
+          type: array
+          items:
+            type: string
+
+  - name: sql-generation
+    description: "Generates SQL queries from natural language questions given a database schema"
+    format: chat_messages
+    template: |
+      You are an expert SQL developer. Given the following database schema and a natural language question, generate the appropriate SQL query.
+
+      Database type: {{db_type}}
+      Schema:
+      {{schema}}
+
+      Question: {{question}}
+
+      Rules:
+      - Use proper SQL syntax for the specified database type
+      - Include comments explaining complex joins or subqueries
+      - Optimize for readability and performance
+      - Do not use SELECT * unless specifically asked
+    taskTags: ["sql-generation", "database"]
+    version: "2.0.0"
+    author: "Data Engineering"
+    license: "Apache-2.0"
+    parametersSchema:
+      type: object
+      properties:
+        question:
+          type: string
+          description: "Natural language question"
+        schema:
+          type: string
+          description: "Database schema definition (DDL or description)"
+        db_type:
+          type: string
+          enum: ["postgresql", "mysql", "sqlite", "bigquery", "snowflake"]
+          default: "postgresql"
+      required: ["question", "schema"]
+    modelConstraints:
+      compatibleModelFamilies: ["gpt-4", "claude", "codellama"]
+      minContextTokens: 4096
+
+  - name: email-drafting
+    description: "Drafts professional emails based on context, tone, and key points"
+    format: completion
+    template: |
+      Draft a professional email with the following parameters:
+
+      Tone: {{tone}}
+      Recipient: {{recipient}}
+      Subject: {{subject}}
+      Key points to cover:
+      {{key_points}}
+
+      Additional context: {{context}}
+
+      The email should be well-structured with a clear greeting, body, and closing.
+    taskTags: ["email", "communication"]
+    version: "1.0.0"
+    author: "Communications Team"
+    license: "Apache-2.0"
+    parametersSchema:
+      type: object
+      properties:
+        tone:
+          type: string
+          enum: ["formal", "semi-formal", "casual", "urgent"]
+          default: "semi-formal"
+        recipient:
+          type: string
+          description: "Recipient name or role"
+        subject:
+          type: string
+          description: "Email subject"
+        key_points:
+          type: string
+          description: "Bullet points or key information to include"
+        context:
+          type: string
+          description: "Additional background context"
+      required: ["recipient", "subject", "key_points"]
+
+  - name: bug-report-triage
+    description: "Analyzes bug reports and assigns severity, category, and suggested assignee"
+    format: chat_messages
+    template: |
+      Analyze the following bug report and provide a triage assessment.
+
+      Bug Report:
+      Title: {{title}}
+      Description: {{description}}
+      Steps to Reproduce: {{steps}}
+      Environment: {{environment}}
+      Stack Trace (if any): {{stack_trace}}
+
+      Provide:
+      1. Severity: critical / high / medium / low
+      2. Category: crash, data-loss, performance, ui, security, functionality
+      3. Affected component (best guess from the description)
+      4. Suggested priority for sprint planning
+      5. Any additional information needed from the reporter
+    taskTags: ["bug-triage", "development", "project-management"]
+    version: "1.0.0"
+    author: "QA Team"
+    license: "Apache-2.0"
+    parametersSchema:
+      type: object
+      properties:
+        title:
+          type: string
+          description: "Bug report title"
+        description:
+          type: string
+          description: "Detailed bug description"
+        steps:
+          type: string
+          description: "Steps to reproduce"
+        environment:
+          type: string
+          description: "Environment details (OS, browser, version)"
+        stack_trace:
+          type: string
+          description: "Stack trace or error log"
+      required: ["title", "description"]
+    outputSchema:
+      type: object
+      properties:
+        severity:
+          type: string
+          enum: ["critical", "high", "medium", "low"]
+        category:
+          type: string
+        affectedComponent:
+          type: string
+        priority:
+          type: string
+
+  - name: api-doc-generator
+    description: "Generates API documentation from code signatures, comments, and usage examples"
+    format: handlebars
+    template: |
+      Generate comprehensive API documentation for the following endpoint.
+
+      Endpoint: {{method}} {{path}}
+      Handler code:
+      {{code}}
+
+      Include:
+      - Description of what the endpoint does
+      - Request parameters (path, query, body) with types and constraints
+      - Response format with example JSON
+      - Error codes and their meanings
+      - Usage example with curl
+
+      Format the documentation in Markdown.
+    taskTags: ["documentation", "api", "development"]
+    version: "1.0.0"
+    author: "Platform Team"
+    license: "Apache-2.0"
+    parametersSchema:
+      type: object
+      properties:
+        method:
+          type: string
+          enum: ["GET", "POST", "PUT", "PATCH", "DELETE"]
+        path:
+          type: string
+          description: "API endpoint path"
+        code:
+          type: string
+          description: "Handler function code"
+      required: ["method", "path", "code"]
+    modelConstraints:
+      compatibleModelFamilies: ["gpt-4", "claude"]
+      minContextTokens: 8192
+
+  - name: test-case-generator
+    description: "Generates test cases for functions or API endpoints including edge cases"
+    format: chat_messages
+    template: |
+      Generate comprehensive test cases for the following {{test_type}}.
+
+      {{#if function_signature}}
+      Function signature: {{function_signature}}
+      {{/if}}
+      {{#if api_spec}}
+      API specification: {{api_spec}}
+      {{/if}}
+
+      Requirements: {{requirements}}
+      Language/Framework: {{language}}
+
+      Generate test cases covering:
+      1. Happy path scenarios
+      2. Edge cases and boundary values
+      3. Error handling and invalid inputs
+      4. Performance considerations (if applicable)
+
+      Format as executable test code in the specified language/framework.
+    taskTags: ["testing", "development", "quality"]
+    version: "1.0.0"
+    author: "QA Team"
+    license: "Apache-2.0"
+    parametersSchema:
+      type: object
+      properties:
+        test_type:
+          type: string
+          enum: ["function", "api-endpoint", "integration", "e2e"]
+          default: "function"
+        function_signature:
+          type: string
+          description: "Function or method signature"
+        api_spec:
+          type: string
+          description: "API endpoint specification"
+        requirements:
+          type: string
+          description: "Business requirements or acceptance criteria"
+        language:
+          type: string
+          description: "Programming language and test framework"
+          default: "Go (testing)"
+      required: ["requirements", "language"]
+
+  - name: meeting-notes-summarizer
+    description: "Summarizes meeting transcripts into structured notes with action items and decisions"
+    format: completion
+    template: |
+      Summarize the following meeting transcript into structured notes.
+
+      Meeting: {{meeting_title}}
+      Date: {{date}}
+      Participants: {{participants}}
+
+      Transcript:
+      {{transcript}}
+
+      Provide:
+      1. Executive Summary (2-3 sentences)
+      2. Key Discussion Points (bulleted)
+      3. Decisions Made (numbered)
+      4. Action Items (with assignee and deadline if mentioned)
+      5. Open Questions / Parking Lot items
+      6. Next Steps
+    taskTags: ["summarization", "meeting-notes", "productivity"]
+    version: "1.0.0"
+    author: "Productivity Team"
+    license: "Apache-2.0"
+    parametersSchema:
+      type: object
+      properties:
+        meeting_title:
+          type: string
+          description: "Name of the meeting"
+        date:
+          type: string
+          description: "Meeting date"
+        participants:
+          type: string
+          description: "List of participants"
+        transcript:
+          type: string
+          description: "Full meeting transcript"
+      required: ["transcript"]
+    modelConstraints:
+      compatibleModelFamilies: ["gpt-4", "claude"]
+      minContextTokens: 16384
+      maxOutputTokens: 4096
+
+  - name: persona-chatbot
+    description: "Configurable persona-based chatbot system prompt for customer-facing interactions"
+    format: raw
+    template: |
+      You are {{persona_name}}, a {{persona_role}} at {{company_name}}.
+
+      Personality traits: {{traits}}
+      Communication style: {{style}}
+      Knowledge domain: {{domain}}
+
+      Guidelines:
+      - Stay in character at all times
+      - Be helpful and professional
+      - If you don't know something, say so honestly
+      - Never make up information about products or services
+      - Refer complex issues to human support when appropriate
+
+      {{#if additional_instructions}}
+      Additional instructions: {{additional_instructions}}
+      {{/if}}
+
+      Now respond to the following user message:
+      {{user_message}}
+    taskTags: ["chatbot", "customer-support", "persona"]
+    version: "1.0.0"
+    author: "Customer Experience Team"
+    license: "Apache-2.0"
+    parametersSchema:
+      type: object
+      properties:
+        persona_name:
+          type: string
+          description: "Name of the chatbot persona"
+        persona_role:
+          type: string
+          description: "Role of the persona (e.g., support agent, sales rep)"
+        company_name:
+          type: string
+          description: "Company name"
+        traits:
+          type: string
+          description: "Personality traits (e.g., friendly, patient, knowledgeable)"
+        style:
+          type: string
+          description: "Communication style (e.g., formal, casual, empathetic)"
+        domain:
+          type: string
+          description: "Knowledge domain"
+        additional_instructions:
+          type: string
+          description: "Additional behavioral instructions"
+        user_message:
+          type: string
+          description: "The user's message to respond to"
+      required: ["persona_name", "persona_role", "company_name", "user_message"]
+    examples:
+      - inputs:
+          persona_name: "Alex"
+          persona_role: "technical support agent"
+          company_name: "TechCorp"
+          traits: "patient, technically savvy, friendly"
+          style: "casual but professional"
+          domain: "cloud computing and DevOps"
+          user_message: "How do I set up auto-scaling for my application?"
+        notes: "Should provide a helpful response in character as Alex"

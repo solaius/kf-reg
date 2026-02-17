@@ -13,8 +13,8 @@ const (
 	pluginCapabilitiesPathFmt = "/api/plugins/%s/capabilities"
 	pluginEntityPathFmt       = "/api/%s_catalog/v1alpha1/%s"
 	pluginEntityGetPathFmt    = "/api/%s_catalog/v1alpha1/%s/%s"
-	pluginEntityActionPathFmt = "/api/%s_catalog/v1alpha1/%s/%s:action"
-	pluginSourceActionPathFmt = "/api/%s_catalog/v1alpha1/sources/%s:action"
+	pluginEntityActionPathFmt = "/api/%s_catalog/v1alpha1/management/entities/%s:action"
+	pluginSourceActionPathFmt = "/api/%s_catalog/v1alpha1/management/sources/%s:action"
 )
 
 // CatalogEntitiesInterface defines methods for generic catalog entity browsing.
@@ -66,7 +66,7 @@ func (a CatalogEntities) GetCatalogEntity(client httpclient.HTTPClientInterface,
 }
 
 func (a CatalogEntities) PostCatalogEntityAction(client httpclient.HTTPClientInterface, pluginName string, entityPlural string, entityName string, body io.Reader) (json.RawMessage, error) {
-	path := fmt.Sprintf(pluginEntityActionPathFmt, pluginName, entityPlural, entityName)
+	path := fmt.Sprintf(pluginEntityActionPathFmt, pluginName, entityName)
 
 	responseData, err := client.POST(path, body)
 	if err != nil {

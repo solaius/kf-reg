@@ -11,11 +11,12 @@ import (
 )
 
 const (
-	mgmtSourcesPath     = "/sources"
-	mgmtRefreshPath     = "/refresh"
-	mgmtDiagnosticsPath = "/diagnostics"
-	mgmtValidatePath    = "/validate-source"
-	mgmtApplyPath       = "/apply-source"
+	mgmtPrefix          = "/management"
+	mgmtSourcesPath     = mgmtPrefix + "/sources"
+	mgmtRefreshPath     = mgmtPrefix + "/refresh"
+	mgmtDiagnosticsPath = mgmtPrefix + "/diagnostics"
+	mgmtValidatePath    = mgmtPrefix + "/validate-source"
+	mgmtApplyPath       = mgmtPrefix + "/apply-source"
 	mgmtEnableSuffix    = "/enable"
 	mgmtRevisionsPath   = "/revisions"
 )

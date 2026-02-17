@@ -1,0 +1,320 @@
+agents:
+  - name: customer-support-agent
+    description: "Conversational agent for handling customer support inquiries"
+    agentType: conversational
+    instructions: "You are a helpful customer support agent. Use the knowledge base to answer questions accurately. Escalate complex issues to human agents."
+    version: "2.0.0"
+    author: "Support Team"
+    license: "Apache-2.0"
+    category: "customer-service"
+    modelConfig:
+      preferredModelRef: "gpt-4o"
+      maxTokens: 4096
+      temperature: 0.7
+    tools:
+      - skillRef: "web-search"
+        required: false
+        timeout: 30
+      - skillRef: "send-notification"
+        required: false
+    knowledge:
+      - knowledgeSourceRef: "product-faq-vectordb"
+        retrievalHints:
+          topK: 5
+      - knowledgeSourceRef: "company-docs"
+    guardrails:
+      - guardrailRef: "pii-detector"
+        enforcementMode: required
+      - guardrailRef: "content-safety-filter"
+        enforcementMode: required
+    policies:
+      - policyRef: "model-access-control"
+        enforcementMode: enforce
+    promptRefs:
+      - promptTemplateRef: "persona-chatbot"
+        role: "system"
+
+  - name: code-review-agent
+    description: "Task-oriented agent for automated code review and quality analysis"
+    agentType: task_oriented
+    instructions: "Review code submissions for quality, security vulnerabilities, and adherence to team coding standards. Provide actionable feedback with line-specific suggestions."
+    version: "1.5.0"
+    author: "Engineering Platform"
+    license: "Apache-2.0"
+    category: "development"
+    modelConfig:
+      preferredModelRef: "claude-3-opus"
+      fallbackModelRefs:
+        - "gpt-4o"
+      maxTokens: 8192
+      temperature: 0.3
+    tools:
+      - skillRef: "code-analysis"
+        required: true
+        timeout: 120
+      - skillRef: "git-diff-parser"
+        required: true
+    knowledge:
+      - knowledgeSourceRef: "company-docs"
+        retrievalHints:
+          topK: 3
+    guardrails:
+      - guardrailRef: "content-safety-filter"
+        enforcementMode: required
+    inputSchema:
+      type: object
+      properties:
+        pullRequestUrl:
+          type: string
+        diffContent:
+          type: string
+      required:
+        - diffContent
+    outputSchema:
+      type: object
+      properties:
+        overallScore:
+          type: number
+        findings:
+          type: array
+          items:
+            type: object
+        summary:
+          type: string
+
+  - name: research-orchestrator
+    description: "Planner agent that coordinates multi-step research workflows across specialized sub-agents"
+    agentType: planner
+    instructions: "Decompose research questions into sub-tasks, assign them to specialized agents, aggregate results, and produce a coherent research report."
+    version: "1.0.0"
+    author: "Research Team"
+    license: "MIT"
+    category: "research"
+    modelConfig:
+      preferredModelRef: "gpt-4o"
+      maxTokens: 16384
+      temperature: 0.5
+    tools:
+      - skillRef: "web-search"
+        required: true
+        timeout: 60
+      - mcpToolRef: "filesystem"
+        required: false
+    knowledge:
+      - knowledgeSourceRef: "research-papers"
+        retrievalHints:
+          topK: 10
+    dependencies:
+      - agentRef: "data-analyst"
+        role: "data-analysis"
+      - agentRef: "output-evaluator"
+        role: "quality-check"
+
+  - name: query-router
+    description: "Router agent that classifies incoming requests and routes them to the appropriate specialized agent"
+    agentType: router
+    instructions: "Analyze incoming user queries, classify their intent, and route to the most appropriate specialized agent. If no match, handle with general knowledge."
+    version: "3.1.0"
+    author: "Platform Team"
+    license: "Apache-2.0"
+    category: "infrastructure"
+    modelConfig:
+      preferredModelRef: "gpt-4o-mini"
+      maxTokens: 1024
+      temperature: 0.1
+      topP: 0.9
+    dependencies:
+      - agentRef: "customer-support-agent"
+        role: "customer-support"
+      - agentRef: "code-review-agent"
+        role: "code-review"
+      - agentRef: "data-analyst"
+        role: "data-analysis"
+    guardrails:
+      - guardrailRef: "content-safety-filter"
+        enforcementMode: required
+    policies:
+      - policyRef: "model-access-control"
+        enforcementMode: enforce
+
+  - name: code-executor
+    description: "Executor agent that safely runs code snippets in sandboxed environments"
+    agentType: executor
+    instructions: "Execute code snippets in a secure sandbox. Validate inputs before execution, enforce resource limits, and return structured results with stdout, stderr, and exit code."
+    version: "2.2.0"
+    author: "Security Team"
+    license: "Apache-2.0"
+    category: "development"
+    modelConfig:
+      preferredModelRef: "gpt-4o"
+      maxTokens: 4096
+      temperature: 0.0
+    tools:
+      - skillRef: "sandbox-executor"
+        required: true
+        timeout: 300
+    guardrails:
+      - guardrailRef: "code-injection-detector"
+        enforcementMode: required
+      - guardrailRef: "resource-limit-enforcer"
+        enforcementMode: required
+    policies:
+      - policyRef: "code-execution-policy"
+        enforcementMode: enforce
+    inputSchema:
+      type: object
+      properties:
+        language:
+          type: string
+          enum: ["python", "javascript", "bash", "sql"]
+        code:
+          type: string
+        timeout:
+          type: integer
+      required:
+        - language
+        - code
+    outputSchema:
+      type: object
+      properties:
+        stdout:
+          type: string
+        stderr:
+          type: string
+        exitCode:
+          type: integer
+        executionTime:
+          type: number
+
+  - name: output-evaluator
+    description: "Evaluator agent that assesses the quality and accuracy of outputs from other agents"
+    agentType: evaluator
+    instructions: "Evaluate agent outputs for correctness, completeness, relevance, and quality. Score outputs on multiple dimensions and provide improvement suggestions."
+    version: "1.3.0"
+    author: "Quality Team"
+    license: "Apache-2.0"
+    category: "quality-assurance"
+    modelConfig:
+      preferredModelRef: "claude-3-opus"
+      maxTokens: 4096
+      temperature: 0.2
+    promptRefs:
+      - promptTemplateRef: "evaluation-rubric"
+        role: "system"
+    inputSchema:
+      type: object
+      properties:
+        agentOutput:
+          type: string
+        originalQuery:
+          type: string
+        expectedCriteria:
+          type: array
+          items:
+            type: string
+      required:
+        - agentOutput
+        - originalQuery
+
+  - name: data-analyst
+    description: "Task-oriented agent for data analysis, visualization, and insight generation"
+    agentType: task_oriented
+    instructions: "Analyze datasets, generate visualizations, compute statistics, and produce actionable insights. Use SQL for data querying and Python for analysis."
+    version: "2.0.0"
+    author: "Data Team"
+    license: "Apache-2.0"
+    category: "analytics"
+    modelConfig:
+      preferredModelRef: "gpt-4o"
+      maxTokens: 8192
+      temperature: 0.3
+    tools:
+      - skillRef: "sql-executor"
+        required: true
+        timeout: 60
+      - skillRef: "data-visualizer"
+        required: false
+    knowledge:
+      - knowledgeSourceRef: "company-docs"
+        retrievalHints:
+          topK: 3
+
+  - name: meeting-assistant
+    description: "Conversational agent for meeting facilitation, note-taking, and action item tracking"
+    agentType: conversational
+    instructions: "Facilitate meetings by taking notes, summarizing discussions, tracking action items, and sending follow-up notifications. Maintain meeting context across sessions."
+    version: "1.1.0"
+    author: "Productivity Team"
+    license: "MIT"
+    category: "productivity"
+    modelConfig:
+      preferredModelRef: "gpt-4o-mini"
+      maxTokens: 4096
+      temperature: 0.5
+    tools:
+      - skillRef: "send-notification"
+        required: false
+      - skillRef: "calendar-integration"
+        required: false
+    promptRefs:
+      - promptTemplateRef: "meeting-facilitator"
+        role: "system"
+    examples:
+      - input: "Summarize today's standup meeting"
+        output: "Here are the key points from today's standup..."
+      - input: "What are the open action items from last week?"
+        output: "There are 3 open action items from last week's meetings..."
+
+  - name: security-scanner
+    description: "Task-oriented agent for security vulnerability scanning and compliance checking"
+    agentType: task_oriented
+    instructions: "Scan codebases, configurations, and infrastructure for security vulnerabilities. Check compliance against CIS benchmarks and company security policies."
+    version: "1.8.0"
+    author: "Security Team"
+    license: "Apache-2.0"
+    category: "security"
+    modelConfig:
+      preferredModelRef: "gpt-4o"
+      maxTokens: 8192
+      temperature: 0.1
+    tools:
+      - skillRef: "vulnerability-scanner"
+        required: true
+        timeout: 600
+      - skillRef: "code-analysis"
+        required: true
+    guardrails:
+      - guardrailRef: "pii-detector"
+        enforcementMode: required
+    policies:
+      - policyRef: "security-scan-policy"
+        enforcementMode: enforce
+
+  - name: onboarding-guide
+    description: "Conversational agent for new employee onboarding and training"
+    agentType: conversational
+    instructions: "Guide new employees through the onboarding process. Answer questions about company policies, tools, and procedures. Track onboarding progress and provide personalized recommendations."
+    version: "1.2.0"
+    author: "HR Team"
+    license: "Apache-2.0"
+    category: "human-resources"
+    modelConfig:
+      preferredModelRef: "gpt-4o-mini"
+      maxTokens: 4096
+      temperature: 0.7
+    knowledge:
+      - knowledgeSourceRef: "company-docs"
+        retrievalHints:
+          topK: 5
+      - knowledgeSourceRef: "product-faq-vectordb"
+    guardrails:
+      - guardrailRef: "pii-detector"
+        enforcementMode: required
+      - guardrailRef: "content-safety-filter"
+        enforcementMode: required
+    policies:
+      - policyRef: "model-access-control"
+        enforcementMode: enforce
+    promptRefs:
+      - promptTemplateRef: "persona-chatbot"
+        role: "system"

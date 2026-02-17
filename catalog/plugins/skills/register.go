@@ -1,0 +1,7 @@
+package skills
+
+import "github.com/kubeflow/model-registry/pkg/catalog/plugin"
+
+func init() {
+	plugin.Register(&SkillPlugin{})
+}

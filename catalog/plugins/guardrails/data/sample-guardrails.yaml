@@ -1,0 +1,118 @@
+guardrails:
+  - name: pii-detector
+    description: "Detects and redacts personally identifiable information"
+    guardrailType: regex_rules
+    enforcementStage: post_generation
+    riskCategories: ["pii"]
+    enforcementMode: required
+    modalities: ["text"]
+    version: "2.1.0"
+    author: "Security Team"
+    license: "Apache-2.0"
+
+  - name: content-safety-filter
+    description: "Filters harmful content including hate speech and violence"
+    guardrailType: content_filter
+    enforcementStage: post_generation
+    riskCategories: ["hate", "violence", "self_harm"]
+    enforcementMode: required
+    modalities: ["text", "image"]
+    version: "3.0.1"
+    author: "Trust & Safety"
+    license: "Apache-2.0"
+
+  - name: prompt-injection-guard
+    description: "Detects and blocks prompt injection attempts in user input"
+    guardrailType: nemo_guardrails
+    enforcementStage: pre_prompt
+    riskCategories: ["policy_violation"]
+    enforcementMode: required
+    modalities: ["text"]
+    version: "1.4.0"
+    author: "AI Security Lab"
+    license: "MIT"
+    configRef:
+      railsConfig: "config/prompt-injection.co"
+
+  - name: secrets-scanner
+    description: "Scans generated output for leaked API keys, tokens, and credentials"
+    guardrailType: regex_rules
+    enforcementStage: post_generation
+    riskCategories: ["secrets"]
+    enforcementMode: required
+    modalities: ["text"]
+    version: "1.8.2"
+    author: "Security Team"
+    license: "Apache-2.0"
+
+  - name: hate-speech-detector
+    description: "Multi-language hate speech detection using classifier models"
+    guardrailType: guardrails_ai
+    enforcementStage: post_generation
+    riskCategories: ["hate"]
+    enforcementMode: required
+    modalities: ["text"]
+    version: "2.0.0"
+    author: "Trust & Safety"
+    license: "Apache-2.0"
+
+  - name: nemo-topical-guard
+    description: "Ensures conversations stay within approved topics using NeMo Guardrails"
+    guardrailType: nemo_guardrails
+    enforcementStage: pre_prompt
+    riskCategories: ["policy_violation"]
+    enforcementMode: advisory
+    modalities: ["text"]
+    version: "1.2.0"
+    author: "AI Platform Team"
+    license: "Apache-2.0"
+    configRef:
+      railsConfig: "config/topical-rails.co"
+      topicsList: "config/allowed-topics.yaml"
+
+  - name: output-format-validator
+    description: "Validates that LLM output conforms to expected JSON/XML schemas"
+    guardrailType: guardrails_ai
+    enforcementStage: output_format
+    riskCategories: ["policy_violation"]
+    enforcementMode: required
+    modalities: ["text"]
+    version: "1.0.3"
+    author: "Platform Engineering"
+    license: "MIT"
+
+  - name: toxicity-filter
+    description: "Comprehensive toxicity detection across multiple dimensions"
+    guardrailType: content_filter
+    enforcementStage: post_generation
+    riskCategories: ["hate", "violence", "self_harm"]
+    enforcementMode: advisory
+    modalities: ["text", "audio"]
+    version: "4.1.0"
+    author: "Trust & Safety"
+    license: "Apache-2.0"
+
+  - name: code-injection-blocker
+    description: "Prevents code injection in tool-use and function-calling scenarios"
+    guardrailType: regex_rules
+    enforcementStage: tool_use
+    riskCategories: ["malware", "policy_violation"]
+    enforcementMode: required
+    modalities: ["text"]
+    version: "1.5.0"
+    author: "Security Team"
+    license: "Apache-2.0"
+
+  - name: data-leakage-preventer
+    description: "Prevents sensitive training data and internal information leakage"
+    guardrailType: moderation_profile
+    enforcementStage: retrieval
+    riskCategories: ["pii", "secrets", "policy_violation"]
+    enforcementMode: required
+    modalities: ["text"]
+    version: "2.3.0"
+    author: "Data Governance"
+    license: "Apache-2.0"
+    configRef:
+      sensitivePatterns: "config/sensitive-patterns.yaml"
+      allowList: "config/approved-responses.yaml"

@@ -1,0 +1,38 @@
+agents:
+  - name: literature-review-agent
+    description: "Conducts systematic literature reviews across academic databases"
+    agentType: task_oriented
+    instructions: "You are a research assistant specializing in literature reviews. Search academic databases, summarize findings, identify gaps, and produce structured review reports."
+    version: "1.0.0"
+    author: "Research Lab"
+    license: "Apache-2.0"
+    category: "research"
+    modelConfig:
+      preferredModelRef: "claude-3-opus"
+      maxTokens: 8192
+      temperature: 0.3
+    tools:
+      - skillRef: "web-search"
+        required: true
+      - skillRef: "file-read"
+        required: false
+    knowledge:
+      - knowledgeSourceRef: "research-papers"
+        retrievalHints:
+          topK: 20
+
+  - name: experiment-tracker
+    description: "Tracks and logs ML experiment results and hyperparameters"
+    agentType: executor
+    instructions: "You track machine learning experiments. Record hyperparameters, metrics, and artifacts. Compare runs and identify best configurations."
+    version: "1.2.0"
+    author: "ML Platform Team"
+    license: "Apache-2.0"
+    category: "mlops"
+    modelConfig:
+      preferredModelRef: "gpt-4o-mini"
+      maxTokens: 4096
+      temperature: 0.1
+    tools:
+      - skillRef: "database-query"
+        required: true

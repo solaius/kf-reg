@@ -214,14 +214,16 @@ func (s *Server) MountRoutes() chi.Router {
 				s.logger.Error("failed to register routes", "plugin", p.Name(), "error", err)
 			}
 
-			// Mount management routes if the plugin implements any management interfaces
+			// Mount management routes if the plugin implements any management interfaces.
+			// Management routes are mounted under /management to avoid collisions with
+			// plugin-native routes (e.g., model plugin's own GET /sources).
 			_, hasSM := p.(SourceManager)
 			_, hasRP := p.(RefreshProvider)
 			_, hasDP := p.(DiagnosticsProvider)
 			_, hasAP := p.(ActionProvider)
 			if hasSM || hasRP || hasDP || hasAP {
 				mgmtRouter := managementRouter(p, s.roleExtractor, s)
-				r.Mount("/", mgmtRouter)
+				r.Mount("/management", mgmtRouter)
 				s.logger.Info("mounted management routes", "plugin", p.Name(),
 					"sourceManager", hasSM, "refresh", hasRP, "diagnostics", hasDP, "actions", hasAP)
 			}
