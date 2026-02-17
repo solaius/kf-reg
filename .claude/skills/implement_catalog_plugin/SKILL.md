@@ -34,13 +34,41 @@ Use this skill when adding a new asset-type plugin or extending an existing plug
    - RegisterRoutes: mount under the plugin base path
    - Start: start background loaders/watchers if used
    - Healthy: readiness checks must reflect ingest health
-7. Add tests
+7. Implement Phase 5 interfaces (required for new plugins)
+   - `CapabilitiesV2Provider`: return full `PluginCapabilitiesV2` with entities, sources, actions, field metadata, UI hints
+   - `AssetMapperProvider`: implement `AssetMapper` to project native entities to `AssetResource` universal envelope
+   - `ActionProvider`: implement actions (at minimum: tag, annotate, deprecate via overlay store; refresh for sources)
+   - Verify capabilities endpoint returns valid JSON: `GET /api/plugins/{name}/capabilities`
+8. Add tests
    - Unit tests for parsing, mapping, and provider behavior
    - Integration tests that exercise sources.yaml -> ingest -> list/get
    - If you add filtering, include tests for filterQuery behavior
-8. Validate end-to-end
+   - Test action execution and dry-run semantics
+   - Run conformance suite: `CATALOG_SERVER_URL=http://localhost:8080 go test ./tests/conformance/... -v -count=1`
+9. Validate end-to-end
    - Verify /api/plugins lists the plugin and its base path
+   - Verify /api/plugins/{name}/capabilities returns complete V2 capabilities
    - Verify OpenAPI merge produces a unified spec without collisions
+   - Verify generic UI renders the plugin without plugin-specific code
+   - Verify CLI can list/get entities without CLI code changes
+
+## Key Phase 5 interfaces
+
+```go
+// Required interfaces for capabilities-driven plugins
+type CapabilitiesV2Provider interface {
+    GetCapabilitiesV2() PluginCapabilitiesV2
+}
+
+type AssetMapperProvider interface {
+    GetAssetMapper() AssetMapper
+}
+
+type ActionProvider interface {
+    HandleAction(ctx context.Context, scope ActionScope, targetID string, req ActionRequest) (*ActionResult, error)
+    ListActions(scope ActionScope) []ActionDefinition
+}
+```
 
 ## Validation
 Use the repo loop:
@@ -48,6 +76,7 @@ Use the repo loop:
 - make lint
 - make test
 - make openapi/validate (or the catalog OpenAPI validation target if different)
+- CATALOG_SERVER_URL=http://localhost:8080 go test ./tests/conformance/... -v -count=1
 
 If you touch DB schema or migrations, ensure the repo DB schema checks pass.
 
@@ -55,3 +84,4 @@ If you touch DB schema or migrations, ensure the repo DB schema checks pass.
 - A short summary of what you added
 - The exact commands you ran and their results
 - Links to the changed OpenAPI files and the generated outputs
+- Conformance suite results

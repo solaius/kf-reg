@@ -1,0 +1,37 @@
+apiVersion: catalog.kubeflow.org/v1alpha1
+kind: CatalogConfig
+metadata:
+  name: knowledge
+spec:
+  package: github.com/kubeflow/model-registry/catalog/plugins/knowledge
+  entity:
+    name: KnowledgeSource
+    properties:
+      - name: sourceType
+        type: string
+        description: "Type of knowledge source: document, url, vector_store, graph_store"
+      - name: location
+        type: string
+        description: "URI or path to the knowledge source"
+      - name: contentType
+        type: string
+        description: "MIME type or format of the content"
+      - name: provider
+        type: string
+        description: "Organization that provides this knowledge source"
+      - name: status
+        type: string
+        description: "Current status: active, indexing, error, archived"
+      - name: documentCount
+        type: integer
+        description: "Number of documents in the knowledge source"
+      - name: vectorDimensions
+        type: integer
+        description: "Dimensionality of vectors (for vector stores)"
+      - name: indexType
+        type: string
+        description: "Type of index used (e.g. HNSW, IVF)"
+  providers:
+    - type: yaml
+  api:
+    basePath: /api/knowledge_catalog/v1alpha1

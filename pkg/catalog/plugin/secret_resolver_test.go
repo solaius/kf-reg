@@ -1,7 +1,66 @@
+// SecretRef Real-Cluster Verification Steps
+//
+// The tests in this file use a fake Kubernetes clientset. To verify SecretRef
+// resolution in a real Kubernetes cluster, follow the steps below.
+//
+// 1. Create test secrets:
+//
+//	kubectl create secret generic catalog-test-creds \
+//	  --from-literal=token=my-test-token \
+//	  --from-literal=password=my-test-password \
+//	  -n catalog
+//
+// 2. Ensure the catalog-server ServiceAccount has RBAC to read secrets:
+//
+//	kubectl apply -f deploy/catalog-server/rbac.yaml
+//
+// 3. Start the catalog-server with K8s config store:
+//
+//	CATALOG_CONFIG_STORE_MODE=k8s \
+//	CATALOG_CONFIG_NAMESPACE=catalog \
+//	./catalog-server --listen=:8080 --db-type=postgres --db-dsn=...
+//
+// 4. Apply a source with SecretRef properties:
+//
+//	curl -X POST http://localhost:8080/api/mcp_catalog/v1alpha1/apply-source \
+//	  -H 'Content-Type: application/json' \
+//	  -H 'X-User-Role: operator' \
+//	  -d '{
+//	    "id": "test-source",
+//	    "name": "Test Source with Secret",
+//	    "type": "yaml",
+//	    "enabled": true,
+//	    "properties": {
+//	      "apiToken": {"name": "catalog-test-creds", "key": "token"},
+//	      "yamlCatalogPath": "/config/test-data.yaml"
+//	    }
+//	  }'
+//
+// 5. Verify the source was applied (token should be resolved internally):
+//
+//	curl http://localhost:8080/api/mcp_catalog/v1alpha1/sources
+//	# The apiToken should show as "***REDACTED***" (sensitive values are redacted in responses)
+//
+// 6. Verify secret rotation: update the secret value and re-apply/refresh:
+//
+//	kubectl create secret generic catalog-test-creds \
+//	  --from-literal=token=updated-token \
+//	  --from-literal=password=my-test-password \
+//	  -n catalog --dry-run=client -o yaml | kubectl apply -f -
+//
+//	curl -X POST http://localhost:8080/api/mcp_catalog/v1alpha1/sources/test-source:action \
+//	  -H 'Content-Type: application/json' \
+//	  -H 'X-User-Role: operator' \
+//	  -d '{"action":"refresh"}'
+//
+// 7. Cleanup:
+//
+//	kubectl delete secret catalog-test-creds -n catalog
 package plugin
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -303,6 +362,306 @@ func TestResolveSecretRefs(t *testing.T) {
 		result, err := ResolveSecretRefs(ctx, props, resolver)
 		require.NoError(t, err)
 		assert.Equal(t, arbitraryMap, result["config"])
+	})
+}
+
+// TestResolveSecretRefsComprehensive is a table-driven test covering
+// cross-namespace resolution, mixed property types, and edge cases for
+// ResolveSecretRefs with a multi-namespace fake K8s clientset.
+func TestResolveSecretRefsComprehensive(t *testing.T) {
+	ctx := context.Background()
+
+	// Create secrets across two namespaces to test namespace resolution logic.
+	clientset := fake.NewSimpleClientset(
+		&corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "api-creds",
+				Namespace: "catalog",
+			},
+			Data: map[string][]byte{
+				"token":    []byte("my-secret-token"),
+				"password": []byte("s3cret!"),
+			},
+		},
+		&corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "other-creds",
+				Namespace: "other-ns",
+			},
+			Data: map[string][]byte{
+				"api-key": []byte("key-12345"),
+			},
+		},
+	)
+
+	resolver := NewK8sSecretResolver(clientset, "catalog") // default namespace
+
+	tests := []struct {
+		name        string
+		properties  map[string]any
+		expectError bool
+		errContains string
+		expected    map[string]any
+		description string
+	}{
+		{
+			name: "simple SecretRef resolution in default namespace",
+			properties: map[string]any{
+				"apiToken": map[string]any{
+					"name": "api-creds",
+					"key":  "token",
+				},
+				"normalProp": "unchanged",
+			},
+			expected: map[string]any{
+				"apiToken":   "my-secret-token",
+				"normalProp": "unchanged",
+			},
+			description: "SecretRef in default namespace resolves to secret value",
+		},
+		{
+			name: "SecretRef with explicit namespace",
+			properties: map[string]any{
+				"apiKey": map[string]any{
+					"name":      "other-creds",
+					"key":       "api-key",
+					"namespace": "other-ns",
+				},
+			},
+			expected: map[string]any{
+				"apiKey": "key-12345",
+			},
+			description: "SecretRef with explicit namespace resolves from that namespace",
+		},
+		{
+			name: "missing secret returns error",
+			properties: map[string]any{
+				"apiToken": map[string]any{
+					"name": "nonexistent",
+					"key":  "token",
+				},
+			},
+			expectError: true,
+			errContains: "failed to resolve secret",
+			description: "Reference to non-existent secret should error",
+		},
+		{
+			name: "missing key returns error",
+			properties: map[string]any{
+				"apiToken": map[string]any{
+					"name": "api-creds",
+					"key":  "nonexistent-key",
+				},
+			},
+			expectError: true,
+			errContains: "nonexistent-key",
+			description: "Reference to non-existent key in secret should error",
+		},
+		{
+			name: "multiple SecretRefs in same properties",
+			properties: map[string]any{
+				"token": map[string]any{
+					"name": "api-creds",
+					"key":  "token",
+				},
+				"password": map[string]any{
+					"name": "api-creds",
+					"key":  "password",
+				},
+				"host": "example.com",
+			},
+			expected: map[string]any{
+				"token":    "my-secret-token",
+				"password": "s3cret!",
+				"host":     "example.com",
+			},
+			description: "Multiple SecretRefs resolve independently",
+		},
+		{
+			name: "no SecretRefs passes through unchanged",
+			properties: map[string]any{
+				"host": "example.com",
+				"port": 8080,
+			},
+			expected: map[string]any{
+				"host": "example.com",
+				"port": 8080,
+			},
+			description: "Properties without SecretRefs are returned unchanged",
+		},
+		{
+			name: "namespace defaults to resolver default",
+			properties: map[string]any{
+				"token": map[string]any{
+					"name": "api-creds",
+					"key":  "token",
+					// No namespace specified - should use resolver's default ("catalog")
+				},
+			},
+			expected: map[string]any{
+				"token": "my-secret-token",
+			},
+			description: "Missing namespace falls back to resolver's default namespace",
+		},
+		{
+			name: "cross-namespace mixed resolution",
+			properties: map[string]any{
+				"localToken": map[string]any{
+					"name": "api-creds",
+					"key":  "token",
+				},
+				"remoteKey": map[string]any{
+					"name":      "other-creds",
+					"key":       "api-key",
+					"namespace": "other-ns",
+				},
+				"plainURL": "https://example.com",
+			},
+			expected: map[string]any{
+				"localToken": "my-secret-token",
+				"remoteKey":  "key-12345",
+				"plainURL":   "https://example.com",
+			},
+			description: "SecretRefs from different namespaces resolve in a single call",
+		},
+		{
+			name: "map without name field is not a SecretRef",
+			properties: map[string]any{
+				"config": map[string]any{
+					"key":   "some-key",
+					"value": "some-value",
+				},
+			},
+			expected: map[string]any{
+				"config": map[string]any{
+					"key":   "some-key",
+					"value": "some-value",
+				},
+			},
+			description: "Map with key but no name is not treated as SecretRef",
+		},
+		{
+			name: "map with extra fields is still a SecretRef",
+			properties: map[string]any{
+				"cred": map[string]any{
+					"name":  "api-creds",
+					"key":   "token",
+					"extra": "ignored-by-resolver",
+				},
+			},
+			expected: map[string]any{
+				"cred": "my-secret-token",
+			},
+			description: "Map with name+key+extra fields is detected as SecretRef and resolved",
+		},
+		{
+			name: "wrong namespace fails resolution",
+			properties: map[string]any{
+				"cred": map[string]any{
+					"name":      "api-creds",
+					"key":       "token",
+					"namespace": "wrong-ns",
+				},
+			},
+			expectError: true,
+			errContains: "failed to resolve secret",
+			description: "SecretRef with wrong namespace should error because secret does not exist there",
+		},
+		{
+			name:       "empty properties map returns empty map",
+			properties: map[string]any{},
+			expected:   map[string]any{},
+			description: "Empty properties map produces an empty result",
+		},
+		{
+			name: "boolean and numeric values pass through",
+			properties: map[string]any{
+				"enabled": true,
+				"count":   42,
+				"ratio":   3.14,
+			},
+			expected: map[string]any{
+				"enabled": true,
+				"count":   42,
+				"ratio":   3.14,
+			},
+			description: "Non-string, non-map values pass through unchanged",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resolved, err := ResolveSecretRefs(ctx, tt.properties, resolver)
+
+			if tt.expectError {
+				require.Error(t, err, tt.description)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+				return
+			}
+
+			require.NoError(t, err, tt.description)
+
+			for key, expectedVal := range tt.expected {
+				gotVal, ok := resolved[key]
+				if !ok {
+					t.Errorf("expected key %q in resolved properties (%s)", key, tt.description)
+					continue
+				}
+				assert.Equal(t, fmt.Sprintf("%v", expectedVal), fmt.Sprintf("%v", gotVal),
+					"key %q mismatch (%s)", key, tt.description)
+			}
+
+			// Verify no extra keys appeared.
+			assert.Equal(t, len(tt.expected), len(resolved),
+				"resolved map should have same number of keys as expected (%s)", tt.description)
+		})
+	}
+}
+
+// TestIsSecretRefEdgeCases covers additional edge cases for IsSecretRef beyond
+// the basic table-driven tests above.
+func TestIsSecretRefEdgeCases(t *testing.T) {
+	t.Run("empty map is not a SecretRef", func(t *testing.T) {
+		_, ok := IsSecretRef(map[string]any{})
+		assert.False(t, ok)
+	})
+
+	t.Run("map with only extra fields is not a SecretRef", func(t *testing.T) {
+		_, ok := IsSecretRef(map[string]any{"foo": "bar", "baz": "qux"})
+		assert.False(t, ok)
+	})
+
+	t.Run("map with name key and extra fields but no key field", func(t *testing.T) {
+		_, ok := IsSecretRef(map[string]any{"name": "my-secret", "namespace": "default"})
+		assert.False(t, ok)
+	})
+
+	t.Run("valid SecretRef with extra fields preserves name key and namespace", func(t *testing.T) {
+		ref, ok := IsSecretRef(map[string]any{
+			"name":      "my-secret",
+			"key":       "api-key",
+			"namespace": "prod",
+			"extra":     "ignored",
+		})
+		assert.True(t, ok)
+		assert.Equal(t, SecretRef{Name: "my-secret", Key: "api-key", Namespace: "prod"}, ref)
+	})
+
+	t.Run("integer value is not a SecretRef", func(t *testing.T) {
+		_, ok := IsSecretRef(42)
+		assert.False(t, ok)
+	})
+
+	t.Run("boolean value is not a SecretRef", func(t *testing.T) {
+		_, ok := IsSecretRef(true)
+		assert.False(t, ok)
+	})
+
+	t.Run("slice value is not a SecretRef", func(t *testing.T) {
+		_, ok := IsSecretRef([]string{"a", "b"})
+		assert.False(t, ok)
 	})
 }
 

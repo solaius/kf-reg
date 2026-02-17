@@ -11,3 +11,12 @@ catalogs:
         properties:
           yamlCatalogPath: "../plugins/mcp/data/mcp-servers.yaml"
           loaderConfigPath: "./mcp-loader-config.yaml"
+  knowledge:
+    sources:
+      - id: knowledge-default
+        name: "Knowledge Sources"
+        type: yaml
+        enabled: true
+        labels: ["Knowledge Sources"]
+        properties:
+          yamlCatalogPath: "../plugins/knowledge/data/sample-knowledge-sources.yaml"

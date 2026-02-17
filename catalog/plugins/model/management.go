@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -12,12 +13,14 @@ import (
 
 // Compile-time interface assertions.
 var (
-	_ plugin.SourceManager       = (*ModelCatalogPlugin)(nil)
-	_ plugin.RefreshProvider     = (*ModelCatalogPlugin)(nil)
-	_ plugin.DiagnosticsProvider = (*ModelCatalogPlugin)(nil)
-	_ plugin.CapabilitiesProvider = (*ModelCatalogPlugin)(nil)
-	_ plugin.UIHintsProvider     = (*ModelCatalogPlugin)(nil)
-	_ plugin.CLIHintsProvider    = (*ModelCatalogPlugin)(nil)
+	_ plugin.SourceManager          = (*ModelCatalogPlugin)(nil)
+	_ plugin.RefreshProvider        = (*ModelCatalogPlugin)(nil)
+	_ plugin.DiagnosticsProvider    = (*ModelCatalogPlugin)(nil)
+	_ plugin.CapabilitiesProvider   = (*ModelCatalogPlugin)(nil)
+	_ plugin.CapabilitiesV2Provider = (*ModelCatalogPlugin)(nil)
+	_ plugin.EntityGetter           = (*ModelCatalogPlugin)(nil)
+	_ plugin.UIHintsProvider        = (*ModelCatalogPlugin)(nil)
+	_ plugin.CLIHintsProvider       = (*ModelCatalogPlugin)(nil)
 )
 
 // Capabilities returns the plugin's advertised capabilities.
@@ -28,6 +31,78 @@ func (p *ModelCatalogPlugin) Capabilities() plugin.PluginCapabilities {
 		GetEntity:    true,
 		ListSources:  true,
 		Artifacts:    true,
+	}
+}
+
+// GetCapabilitiesV2 returns the full V2 capabilities discovery document.
+func (p *ModelCatalogPlugin) GetCapabilitiesV2() plugin.PluginCapabilitiesV2 {
+	basePath := "/api/model_catalog/v1alpha1"
+	return plugin.PluginCapabilitiesV2{
+		SchemaVersion: "v1",
+		Plugin: plugin.PluginMeta{
+			Name:        PluginName,
+			Version:     PluginVersion,
+			Description: "Model catalog for ML models",
+			DisplayName: "Models",
+			Icon:        "model",
+		},
+		Entities: []plugin.EntityCapabilities{
+			{
+				Kind:        "CatalogModel",
+				Plural:      "models",
+				DisplayName: "Model",
+				Description: "Machine learning models",
+				Endpoints: plugin.EntityEndpoints{
+					List: basePath + "/models",
+					Get:  basePath + "/sources/{source_id}/models/{name}",
+				},
+				Fields: plugin.EntityFields{
+					Columns: []plugin.V2ColumnHint{
+						{Name: "name", DisplayName: "Name", Path: "name", Type: "string", Sortable: true, Width: "lg"},
+						{Name: "provider", DisplayName: "Provider", Path: "provider", Type: "string", Sortable: true, Width: "md"},
+						{Name: "task", DisplayName: "Task", Path: "tasks", Type: "string", Sortable: true, Width: "md"},
+						{Name: "license", DisplayName: "License", Path: "license", Type: "string", Sortable: true, Width: "md"},
+						{Name: "source_id", DisplayName: "Source", Path: "source_id", Type: "string", Sortable: true, Width: "md"},
+					},
+					FilterFields: []plugin.V2FilterField{
+						{Name: "name", DisplayName: "Name", Type: "text", Operators: []string{"=", "!=", "LIKE"}},
+						{Name: "provider", DisplayName: "Provider", Type: "text", Operators: []string{"=", "!=", "LIKE"}},
+						{Name: "task", DisplayName: "Task", Type: "text", Operators: []string{"=", "!=", "LIKE"}},
+						{Name: "license", DisplayName: "License", Type: "text", Operators: []string{"=", "!=", "LIKE"}},
+						{Name: "source_id", DisplayName: "Source", Type: "text", Operators: []string{"=", "!="}},
+					},
+					DetailFields: []plugin.V2FieldHint{
+						{Name: "name", DisplayName: "Name", Path: "name", Type: "string", Section: "Overview"},
+						{Name: "description", DisplayName: "Description", Path: "description", Type: "string", Section: "Overview"},
+						{Name: "provider", DisplayName: "Provider", Path: "provider", Type: "string", Section: "Overview"},
+						{Name: "tasks", DisplayName: "Tasks", Path: "tasks", Type: "string", Section: "Overview"},
+						{Name: "license", DisplayName: "License", Path: "license", Type: "string", Section: "Overview"},
+						{Name: "licenseLink", DisplayName: "License Link", Path: "licenseLink", Type: "string", Section: "Overview"},
+						{Name: "maturity", DisplayName: "Maturity", Path: "maturity", Type: "string", Section: "Details"},
+						{Name: "language", DisplayName: "Language", Path: "language", Type: "string", Section: "Details"},
+						{Name: "libraryName", DisplayName: "Library", Path: "libraryName", Type: "string", Section: "Details"},
+						{Name: "readme", DisplayName: "Readme", Path: "readme", Type: "string", Section: "Documentation"},
+					},
+				},
+				UIHints: &plugin.EntityUIHints{
+					Icon:           "model",
+					NameField:      "name",
+					DetailSections: []string{"Overview", "Details", "Documentation"},
+				},
+				Actions: []string{"tag", "annotate", "deprecate", "refresh"},
+			},
+		},
+		Sources: &plugin.SourceCapabilities{
+			Manageable:  true,
+			Refreshable: true,
+			Types:       []string{"yaml", "hf"},
+		},
+		Actions: []plugin.ActionDefinition{
+			{ID: "tag", DisplayName: "Tag", Description: "Add or remove tags on an entity", Scope: "asset", SupportsDryRun: true, Idempotent: true},
+			{ID: "annotate", DisplayName: "Annotate", Description: "Add or update annotations on an entity", Scope: "asset", SupportsDryRun: true, Idempotent: true},
+			{ID: "deprecate", DisplayName: "Deprecate", Description: "Mark an entity as deprecated", Scope: "asset", SupportsDryRun: true, Idempotent: true},
+			{ID: "refresh", DisplayName: "Refresh", Description: "Refresh entities from a source", Scope: "source", SupportsDryRun: false, Idempotent: true},
+		},
 	}
 }
 
@@ -247,4 +322,36 @@ func (p *ModelCatalogPlugin) CLIHints() plugin.CLIHints {
 		SortField:        "name",
 		FilterableFields: []string{"name", "provider", "task", "license", "source_id"},
 	}
+}
+
+// GetEntityByName retrieves a model by name, searching across all sources.
+// This enables the standardized management GET /entities/{name} endpoint for
+// the model plugin, whose native get endpoint requires both source_id and name.
+func (p *ModelCatalogPlugin) GetEntityByName(ctx context.Context, entityKind string, name string) (map[string]any, error) {
+	// Use the list endpoint with a name filter to find the model.
+	models, err := p.dbCatalog.ListModels(ctx, catalog.ListModelsParams{
+		FilterQuery: "name='" + name + "'",
+		PageSize:    1,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to search for model %q: %w", name, err)
+	}
+
+	if len(models.Items) == 0 {
+		return nil, nil
+	}
+
+	// Convert the first matching model to a generic map.
+	model := models.Items[0]
+	data, err := json.Marshal(model)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal model: %w", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal model: %w", err)
+	}
+
+	return result, nil
 }

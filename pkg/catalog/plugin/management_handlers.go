@@ -54,6 +54,25 @@ func managementRouter(p CatalogPlugin, roleExtractor RoleExtractor, srv *Server)
 		r.Get("/diagnostics", diagnosticsHandler(dp))
 	}
 
+	// Action endpoints (requires ActionProvider)
+	if _, ok := p.(ActionProvider); ok {
+		// Source-scoped actions.
+		r.Post("/sources/{sourceId}:action", RequireRole(RoleOperator, roleExtractor)(http.HandlerFunc(actionHandler(p, ActionScopeSource))).ServeHTTP)
+
+		// Asset-scoped actions.
+		r.Post("/entities/{entityName}:action", RequireRole(RoleOperator, roleExtractor)(http.HandlerFunc(actionHandler(p, ActionScopeAsset))).ServeHTTP)
+
+		// Action discovery endpoints (read-only, available to all roles).
+		r.Get("/actions/source", actionsListHandler(p, ActionScopeSource))
+		r.Get("/actions/asset", actionsListHandler(p, ActionScopeAsset))
+	}
+
+	// Entity getter (requires EntityGetter) — provides GET /entities/{entityName}
+	// for plugins whose native get endpoint has multiple path parameters.
+	if eg, ok := p.(EntityGetter); ok {
+		r.Get("/entities/{entityName}", entityGetterHandler(eg))
+	}
+
 	return r
 }
 
@@ -492,6 +511,34 @@ func diagnosticsHandler(dp DiagnosticsProvider) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, diag)
+	}
+}
+
+// entityGetterHandler returns a handler that retrieves a single entity by name
+// using the plugin's EntityGetter interface. This provides a standardized
+// single-path-param get endpoint for plugins whose native get endpoint
+// requires multiple path parameters.
+func entityGetterHandler(eg EntityGetter) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		entityName := chi.URLParam(r, "entityName")
+		if entityName == "" {
+			writeError(w, http.StatusBadRequest, "missing entity name", nil)
+			return
+		}
+
+		// Use empty entityKind — the plugin can infer from context or handle all kinds.
+		result, err := eg.GetEntityByName(r.Context(), "", entityName)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to get entity", err)
+			return
+		}
+
+		if result == nil {
+			writeError(w, http.StatusNotFound, fmt.Sprintf("entity %q not found", entityName), nil)
+			return
+		}
+
+		writeJSON(w, http.StatusOK, result)
 	}
 }
 

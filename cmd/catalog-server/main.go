@@ -25,8 +25,9 @@ import (
 
 	// Import plugins - their init() registers them
 	_ "github.com/kubeflow/model-registry/catalog/plugins/model"
-	_ "github.com/kubeflow/model-registry/catalog/plugins/mcp" // generated via catalog-gen
-	// _ "github.com/kubeflow/model-registry/catalog/plugins/datasets"  // future
+	_ "github.com/kubeflow/model-registry/catalog/plugins/mcp"       // generated via catalog-gen
+	_ "github.com/kubeflow/model-registry/catalog/plugins/knowledge" // knowledge sources plugin
+
 )
 
 func main() {
@@ -140,6 +141,32 @@ func main() {
 		logger.Info("config store disabled, mutations will not be persisted")
 	default:
 		glog.Fatalf("Unknown config store mode: %q (expected file, k8s, or none)", configStoreStr)
+	}
+
+	// Set up auth based on CATALOG_AUTH_MODE.
+	authMode := os.Getenv("CATALOG_AUTH_MODE")
+	switch authMode {
+	case "jwt":
+		jwtCfg := plugin.JWTRoleExtractorConfig{
+			RoleClaim:         envOrDefault("CATALOG_JWT_ROLE_CLAIM", "role"),
+			OperatorRoleValue: envOrDefault("CATALOG_JWT_OPERATOR_VALUE", "operator"),
+			PublicKeyPath:     os.Getenv("CATALOG_JWT_PUBLIC_KEY_PATH"),
+			Issuer:            os.Getenv("CATALOG_JWT_ISSUER"),
+			Audience:          os.Getenv("CATALOG_JWT_AUDIENCE"),
+			Logger:            logger,
+		}
+		serverOpts = append(serverOpts, plugin.WithJWTRoleExtractor(jwtCfg))
+		logger.Info("using JWT auth",
+			"roleClaim", jwtCfg.RoleClaim,
+			"operatorValue", jwtCfg.OperatorRoleValue,
+			"hasPublicKey", jwtCfg.PublicKeyPath != "")
+	case "header", "":
+		// Default: use X-User-Role header (development mode)
+		if authMode == "" {
+			logger.Info("using default header-based auth (X-User-Role)")
+		}
+	default:
+		glog.Fatalf("Unknown auth mode: %q (expected jwt, header, or empty)", authMode)
 	}
 
 	// Create and initialize server

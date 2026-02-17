@@ -144,6 +144,29 @@ type CLIHintsProvider interface {
 	CLIHints() CLIHints
 }
 
+// EntityGetter is an optional interface that plugins can implement to support
+// retrieving a single entity by name through the management API. This is useful
+// when the plugin's native Get endpoint requires multiple path parameters
+// (e.g., /sources/{source_id}/models/{name}) and cannot be used by generic
+// clients that only know the entity name.
+type EntityGetter interface {
+	// GetEntityByName retrieves a single entity by kind and name.
+	// Returns nil, nil if the entity is not found.
+	GetEntityByName(ctx context.Context, entityKind string, name string) (map[string]any, error)
+}
+
+// CapabilitiesV2Provider is an optional interface that plugins can implement
+// to provide the full V2 capabilities discovery document directly.
+// If not implemented, BuildCapabilitiesV2 assembles a V2 document from
+// the V1 CapabilitiesProvider and other optional interfaces.
+type CapabilitiesV2Provider interface {
+	GetCapabilitiesV2() PluginCapabilitiesV2
+}
+
+// AssetMapperProvider is defined in asset_mapper.go.
+// Plugins that implement it can project their native entities into the
+// universal AssetResource envelope for generic UI/CLI consumption.
+
 // Migration represents a database migration for a plugin.
 type Migration struct {
 	// Version is a unique identifier for this migration (e.g., "001", "20240101_initial").

@@ -1,7 +1,9 @@
 package mocks
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"math"
 	"net/url"
@@ -974,4 +976,97 @@ func (m *ModelCatalogClientMock) CreateCatalogSourcePreview(client httpclient.HT
 	catalogSourcePreview := CreateCatalogSourcePreviewMockWithFilter(filterStatus, pageSize, nextPageToken)
 
 	return &catalogSourcePreview, nil
+}
+
+func (m *ModelCatalogClientMock) GetPluginCapabilities(client httpclient.HTTPClientInterface, pluginName string) (json.RawMessage, error) {
+	caps := map[string]interface{}{
+		"pluginName": pluginName,
+		"version":    "v2",
+		"entityTypes": []map[string]interface{}{
+			{
+				"name":        "mcpservers",
+				"displayName": "MCP Servers",
+				"plural":      "mcpservers",
+			},
+		},
+		"sourceTypes": []map[string]interface{}{
+			{
+				"name":        "yaml",
+				"displayName": "YAML File",
+			},
+		},
+		"actions": []map[string]interface{}{
+			{
+				"name":        "deploy",
+				"displayName": "Deploy",
+				"scope":       "entity",
+			},
+		},
+	}
+
+	data, err := json.Marshal(caps)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling mock capabilities: %w", err)
+	}
+
+	return json.RawMessage(data), nil
+}
+
+func (m *ModelCatalogClientMock) GetCatalogEntityList(client httpclient.HTTPClientInterface, pluginName string, entityPlural string, queryParams url.Values) (json.RawMessage, error) {
+	result := map[string]interface{}{
+		"items":         []interface{}{},
+		"size":          0,
+		"pageSize":      10,
+		"nextPageToken": "",
+	}
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling mock entity list: %w", err)
+	}
+
+	return json.RawMessage(data), nil
+}
+
+func (m *ModelCatalogClientMock) GetCatalogEntity(client httpclient.HTTPClientInterface, pluginName string, entityPlural string, entityName string) (json.RawMessage, error) {
+	result := map[string]interface{}{
+		"name":       entityName,
+		"pluginName": pluginName,
+		"entityType": entityPlural,
+	}
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling mock entity: %w", err)
+	}
+
+	return json.RawMessage(data), nil
+}
+
+func (m *ModelCatalogClientMock) PostCatalogEntityAction(_ httpclient.HTTPClientInterface, pluginName string, entityPlural string, entityName string, _ io.Reader) (json.RawMessage, error) {
+	result := map[string]interface{}{
+		"status":  "ok",
+		"message": fmt.Sprintf("action executed on %s/%s/%s", pluginName, entityPlural, entityName),
+	}
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling mock action result: %w", err)
+	}
+
+	return json.RawMessage(data), nil
+}
+
+func (m *ModelCatalogClientMock) PostCatalogSourceAction(_ httpclient.HTTPClientInterface, pluginName string, sourceId string, _ io.Reader) (json.RawMessage, error) {
+	result := map[string]interface{}{
+		"status":  "ok",
+		"message": fmt.Sprintf("action executed on %s source %s", pluginName, sourceId),
+	}
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling mock source action result: %w", err)
+	}
+
+	return json.RawMessage(data), nil
 }

@@ -843,3 +843,215 @@ func (m *secretRefMockConfigStore) Rollback(_ context.Context, _ string) (*Catal
 }
 
 var _ ConfigStore = (*secretRefMockConfigStore)(nil)
+
+// --- Tests for action endpoints in management router ---
+
+// actionMgmtPlugin embeds testMgmtPlugin and adds ActionProvider support.
+type actionMgmtPlugin struct {
+	testMgmtPlugin
+	actions      map[ActionScope][]ActionDefinition
+	handleResult *ActionResult
+	handleErr    error
+}
+
+func (p *actionMgmtPlugin) ListActions(scope ActionScope) []ActionDefinition {
+	if p.actions == nil {
+		return nil
+	}
+	return p.actions[scope]
+}
+
+func (p *actionMgmtPlugin) HandleAction(_ context.Context, scope ActionScope, targetID string, req ActionRequest) (*ActionResult, error) {
+	if p.handleErr != nil {
+		return nil, p.handleErr
+	}
+	if p.handleResult != nil {
+		return p.handleResult, nil
+	}
+	return &ActionResult{
+		Action:  req.Action,
+		Status:  "completed",
+		Message: fmt.Sprintf("executed %s on %s %s", req.Action, scope, targetID),
+	}, nil
+}
+
+var _ ActionProvider = (*actionMgmtPlugin)(nil)
+
+func TestManagementRouter_ActionRoutes(t *testing.T) {
+	noopExtractor := func(_ *http.Request) Role { return RoleOperator }
+
+	t.Run("source action dispatches through management router", func(t *testing.T) {
+		p := &actionMgmtPlugin{
+			actions: map[ActionScope][]ActionDefinition{
+				ActionScopeSource: {
+					{ID: "refresh", DisplayName: "Refresh", SupportsDryRun: true},
+				},
+			},
+			handleResult: &ActionResult{
+				Action:  "refresh",
+				Status:  "completed",
+				Message: "refreshed",
+			},
+		}
+
+		r := chi.NewRouter()
+		r.Mount("/", managementRouter(p, noopExtractor, nil))
+
+		body := `{"action": "refresh"}`
+		req := httptest.NewRequest("POST", "/sources/my-src:action", bytes.NewReader([]byte(body)))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		r.ServeHTTP(rr, req)
+
+		assert.Equal(t, http.StatusOK, rr.Code)
+
+		var result ActionResult
+		err := json.Unmarshal(rr.Body.Bytes(), &result)
+		require.NoError(t, err)
+		assert.Equal(t, "completed", result.Status)
+		assert.Equal(t, "refresh", result.Action)
+	})
+
+	t.Run("asset action dispatches through management router", func(t *testing.T) {
+		p := &actionMgmtPlugin{
+			actions: map[ActionScope][]ActionDefinition{
+				ActionScopeAsset: {
+					{ID: "tag", DisplayName: "Tag", SupportsDryRun: true, Idempotent: true},
+				},
+			},
+			handleResult: &ActionResult{
+				Action:  "tag",
+				Status:  "completed",
+				Message: "tagged",
+			},
+		}
+
+		r := chi.NewRouter()
+		r.Mount("/", managementRouter(p, noopExtractor, nil))
+
+		body := `{"action": "tag", "params": {"tags": ["prod"]}}`
+		req := httptest.NewRequest("POST", "/entities/my-model:action", bytes.NewReader([]byte(body)))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		r.ServeHTTP(rr, req)
+
+		assert.Equal(t, http.StatusOK, rr.Code)
+
+		var result ActionResult
+		err := json.Unmarshal(rr.Body.Bytes(), &result)
+		require.NoError(t, err)
+		assert.Equal(t, "completed", result.Status)
+		assert.Equal(t, "tag", result.Action)
+	})
+
+	t.Run("source actions list endpoint returns actions", func(t *testing.T) {
+		p := &actionMgmtPlugin{
+			actions: map[ActionScope][]ActionDefinition{
+				ActionScopeSource: {
+					{ID: "refresh", DisplayName: "Refresh"},
+					{ID: "purge", DisplayName: "Purge", Destructive: true},
+				},
+			},
+		}
+
+		r := chi.NewRouter()
+		r.Mount("/", managementRouter(p, noopExtractor, nil))
+
+		req := httptest.NewRequest("GET", "/actions/source", nil)
+		rr := httptest.NewRecorder()
+		r.ServeHTTP(rr, req)
+
+		assert.Equal(t, http.StatusOK, rr.Code)
+
+		var result map[string]any
+		err := json.Unmarshal(rr.Body.Bytes(), &result)
+		require.NoError(t, err)
+		assert.Equal(t, float64(2), result["count"])
+	})
+
+	t.Run("asset actions list endpoint returns actions", func(t *testing.T) {
+		p := &actionMgmtPlugin{
+			actions: map[ActionScope][]ActionDefinition{
+				ActionScopeAsset: {
+					{ID: "tag", DisplayName: "Tag"},
+					{ID: "annotate", DisplayName: "Annotate"},
+					{ID: "deprecate", DisplayName: "Deprecate"},
+				},
+			},
+		}
+
+		r := chi.NewRouter()
+		r.Mount("/", managementRouter(p, noopExtractor, nil))
+
+		req := httptest.NewRequest("GET", "/actions/asset", nil)
+		rr := httptest.NewRecorder()
+		r.ServeHTTP(rr, req)
+
+		assert.Equal(t, http.StatusOK, rr.Code)
+
+		var result map[string]any
+		err := json.Unmarshal(rr.Body.Bytes(), &result)
+		require.NoError(t, err)
+		assert.Equal(t, float64(3), result["count"])
+	})
+
+	t.Run("plugin without ActionProvider has no action routes", func(t *testing.T) {
+		p := &testMgmtPlugin{} // does not implement ActionProvider
+
+		r := chi.NewRouter()
+		r.Mount("/", managementRouter(p, noopExtractor, nil))
+
+		// Verify that action discovery returns 405 (method not allowed) since the
+		// route is not registered at all.
+		req := httptest.NewRequest("GET", "/actions/source", nil)
+		rr := httptest.NewRecorder()
+		r.ServeHTTP(rr, req)
+
+		assert.Equal(t, http.StatusNotFound, rr.Code)
+	})
+
+	t.Run("RBAC blocks viewer from executing action", func(t *testing.T) {
+		viewerExtractor := func(_ *http.Request) Role { return RoleViewer }
+
+		p := &actionMgmtPlugin{
+			actions: map[ActionScope][]ActionDefinition{
+				ActionScopeSource: {
+					{ID: "refresh", DisplayName: "Refresh"},
+				},
+			},
+		}
+
+		r := chi.NewRouter()
+		r.Mount("/", managementRouter(p, viewerExtractor, nil))
+
+		body := `{"action": "refresh"}`
+		req := httptest.NewRequest("POST", "/sources/src1:action", bytes.NewReader([]byte(body)))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		r.ServeHTTP(rr, req)
+
+		assert.Equal(t, http.StatusForbidden, rr.Code)
+	})
+
+	t.Run("RBAC allows viewer to list actions", func(t *testing.T) {
+		viewerExtractor := func(_ *http.Request) Role { return RoleViewer }
+
+		p := &actionMgmtPlugin{
+			actions: map[ActionScope][]ActionDefinition{
+				ActionScopeSource: {
+					{ID: "refresh", DisplayName: "Refresh"},
+				},
+			},
+		}
+
+		r := chi.NewRouter()
+		r.Mount("/", managementRouter(p, viewerExtractor, nil))
+
+		req := httptest.NewRequest("GET", "/actions/source", nil)
+		rr := httptest.NewRecorder()
+		r.ServeHTTP(rr, req)
+
+		// Actions list is read-only, should be accessible to viewers.
+		assert.Equal(t, http.StatusOK, rr.Code)
+	})
+}

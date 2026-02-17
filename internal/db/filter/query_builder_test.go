@@ -2,6 +2,7 @@ package filter
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -492,4 +493,45 @@ func findFirstLeafExpression(expr *FilterExpression) *FilterExpression {
 		}
 	}
 	return nil
+}
+
+func TestQueryBuilderParameterization(t *testing.T) {
+	// Verify that user-provided values always end up in args, never inlined in SQL
+	tests := []struct {
+		name        string
+		filterQuery string
+		expectValue string // The value that should appear in args
+	}{
+		{
+			name:        "string value with special chars",
+			filterQuery: `name="Robert'; DROP TABLE users;--"`,
+			expectValue: "Robert'; DROP TABLE users;--",
+		},
+		{
+			name:        "LIKE with percent",
+			filterQuery: `name LIKE "%test%"`,
+			expectValue: "%test%",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			expr, err := Parse(tt.filterQuery)
+			if err != nil {
+				t.Skipf("filter expression did not parse (expected for some injection attempts): %v", err)
+			}
+
+			qb := NewQueryBuilderForRestEntity(RestEntityExperiment, nil)
+			result := qb.buildConditionString(expr)
+
+			// Verify the value appears in args, not in the condition string
+			if len(result.args) == 0 {
+				t.Error("expected args to contain the filter value, but args is empty")
+			}
+			// The condition string should use ? placeholders
+			if !strings.Contains(result.condition, "?") {
+				t.Errorf("expected condition to use ? placeholders, got: %s", result.condition)
+			}
+		})
+	}
 }

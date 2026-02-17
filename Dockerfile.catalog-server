@@ -43,6 +43,7 @@ COPY --from=builder /workspace/healthcheck /usr/local/bin/healthcheck
 # Copy config and data files (preserve relative path structure for yamlCatalogPath resolution)
 COPY catalog/config/ /config/
 COPY catalog/plugins/mcp/data/ /plugins/mcp/data/
+COPY catalog/plugins/knowledge/data/ /plugins/knowledge/data/
 
 USER 65532:65532
 

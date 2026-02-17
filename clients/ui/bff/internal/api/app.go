@@ -97,6 +97,15 @@ const (
 	McpCatalogPrefix      = ApiPathPrefix + "/mcp_catalog"
 	McpCatalogServersPath = McpCatalogPrefix + "/mcpservers"
 	McpCatalogServerPath  = McpCatalogServersPath + "/:" + McpServerName
+
+	// Generic catalog capabilities and entity routes
+	CatalogEntityPlural     = "entity_plural"
+	CatalogEntityName       = "entity_name"
+	CatalogCapabilitiesPath = ApiPathPrefix + "/catalog/:" + CatalogPluginName + "/capabilities"
+	CatalogEntityListPath   = ApiPathPrefix + "/catalog/:" + CatalogPluginName + "/entities/:" + CatalogEntityPlural
+	CatalogEntityGetPath    = ApiPathPrefix + "/catalog/:" + CatalogPluginName + "/entities/:" + CatalogEntityPlural + "/:" + CatalogEntityName
+	CatalogEntityActionPath = ApiPathPrefix + "/catalog/:" + CatalogPluginName + "/entities/:" + CatalogEntityPlural + "/:" + CatalogEntityName + "/action"
+	CatalogSourceActionPath = ApiPathPrefix + "/catalog/:" + CatalogPluginName + "/sources/:" + CatalogSourceId + "/action"
 )
 
 type App struct {
@@ -273,7 +282,7 @@ func (app *App) Routes() http.Handler {
 	apiRouter.GET(CatalogSourceModelCatchAllPath, app.AttachNamespace(app.AttachModelCatalogRESTClient(app.GetCatalogSourceModelHandler)))
 	apiRouter.GET(CatalogSourceModelArtifactsCatchAll, app.AttachNamespace(app.AttachModelCatalogRESTClient(app.GetCatalogSourceModelArtifactsHandler)))
 	apiRouter.GET(CatalogModelPerformanceArtifacts, app.AttachNamespace(app.AttachModelCatalogRESTClient(app.GetCatalogModelPerformanceArtifactsHandler)))
-	apiRouter.GET(CatalogPluginListPath, app.AttachNamespace(app.AttachModelCatalogRESTClient(app.GetAllCatalogPluginsHandler)))
+	apiRouter.GET(CatalogPluginListPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.GetAllCatalogPluginsHandler)))
 
 	// Plugin management routes
 	apiRouter.GET(CatalogPluginSourcesPath, app.AttachNamespace(app.AttachModelCatalogRESTClient(app.GetPluginSourcesHandler)))
@@ -291,6 +300,13 @@ func (app *App) Routes() http.Handler {
 	// MCP catalog browsing routes
 	apiRouter.GET(McpCatalogServersPath, app.AttachNamespace(app.AttachModelCatalogRESTClient(app.GetMcpServersHandler)))
 	apiRouter.GET(McpCatalogServerPath, app.AttachNamespace(app.AttachModelCatalogRESTClient(app.GetMcpServerHandler)))
+
+	// Generic catalog capabilities and entity routes (namespace is optional for global catalog browsing)
+	apiRouter.GET(CatalogCapabilitiesPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.GetPluginCapabilitiesHandler)))
+	apiRouter.GET(CatalogEntityListPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.GetCatalogEntityListHandler)))
+	apiRouter.GET(CatalogEntityGetPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.GetCatalogEntityHandler)))
+	apiRouter.POST(CatalogEntityActionPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.PostCatalogEntityActionHandler)))
+	apiRouter.POST(CatalogSourceActionPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.PostCatalogSourceActionHandler)))
 
 	// Kubernetes routes
 	apiRouter.GET(UserPath, app.UserHandler)

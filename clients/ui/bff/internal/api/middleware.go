@@ -247,6 +247,20 @@ func (app *App) AttachNamespace(next func(http.ResponseWriter, *http.Request, ht
 	}
 }
 
+// AttachOptionalNamespace is like AttachNamespace but does not require the namespace
+// parameter. This is used for global catalog routes that are not namespace-scoped.
+func (app *App) AttachOptionalNamespace(next func(http.ResponseWriter, *http.Request, httprouter.Params)) httprouter.Handle {
+	return func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+		namespace := r.URL.Query().Get(string(constants.NamespaceHeaderParameterKey))
+		if namespace != "" {
+			ctx := context.WithValue(r.Context(), constants.NamespaceHeaderParameterKey, namespace)
+			r = r.WithContext(ctx)
+		}
+
+		next(w, r, ps)
+	}
+}
+
 func (app *App) RequireListServiceAccessInNamespace(next func(http.ResponseWriter, *http.Request, httprouter.Params)) httprouter.Handle {
 	return func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 

@@ -1,0 +1,66 @@
+knowledgesources:
+  - name: company-docs
+    description: "Internal company documentation repository"
+    sourceType: document
+    location: "s3://company-docs/knowledge-base/"
+    contentType: "text/markdown"
+    provider: "Internal"
+    status: active
+    documentCount: 1250
+
+  - name: product-faq-vectordb
+    description: "Product FAQ vector store for semantic search"
+    sourceType: vector_store
+    location: "qdrant://localhost:6333/product-faq"
+    contentType: "embeddings/openai-ada-002"
+    provider: "Qdrant"
+    status: active
+    documentCount: 5000
+    vectorDimensions: 1536
+    indexType: "HNSW"
+
+  - name: research-papers
+    description: "AI/ML research papers collection"
+    sourceType: url
+    location: "https://arxiv.org/api/collection/ml-papers"
+    contentType: "application/pdf"
+    provider: "arXiv"
+    status: active
+    documentCount: 342
+
+  - name: customer-knowledge-graph
+    description: "Customer relationship knowledge graph"
+    sourceType: graph_store
+    location: "neo4j://localhost:7687/customer-graph"
+    provider: "Neo4j"
+    status: active
+    documentCount: 15000
+
+  - name: legacy-wiki
+    description: "Legacy wiki content (being migrated)"
+    sourceType: document
+    location: "/mnt/wiki-archive/"
+    contentType: "text/html"
+    provider: "MediaWiki"
+    status: archived
+    documentCount: 890
+
+  - name: support-tickets-embeddings
+    description: "Embedded support ticket database for RAG"
+    sourceType: vector_store
+    location: "pgvector://localhost:5432/support-embeddings"
+    contentType: "embeddings/e5-large-v2"
+    provider: "PGVector"
+    status: active
+    documentCount: 25000
+    vectorDimensions: 1024
+    indexType: "IVF"
+
+  - name: api-documentation
+    description: "Public API reference documentation"
+    sourceType: url
+    location: "https://docs.example.com/api/v2"
+    contentType: "text/html"
+    provider: "Internal"
+    status: active
+    documentCount: 180

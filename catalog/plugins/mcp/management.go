@@ -16,13 +16,94 @@ import (
 
 // Compile-time interface assertions.
 var (
-	_ plugin.SourceManager       = (*McpServerCatalogPlugin)(nil)
-	_ plugin.RefreshProvider     = (*McpServerCatalogPlugin)(nil)
-	_ plugin.DiagnosticsProvider = (*McpServerCatalogPlugin)(nil)
-	_ plugin.CapabilitiesProvider = (*McpServerCatalogPlugin)(nil)
-	_ plugin.UIHintsProvider     = (*McpServerCatalogPlugin)(nil)
-	_ plugin.CLIHintsProvider    = (*McpServerCatalogPlugin)(nil)
+	_ plugin.SourceManager          = (*McpServerCatalogPlugin)(nil)
+	_ plugin.RefreshProvider        = (*McpServerCatalogPlugin)(nil)
+	_ plugin.DiagnosticsProvider    = (*McpServerCatalogPlugin)(nil)
+	_ plugin.CapabilitiesProvider   = (*McpServerCatalogPlugin)(nil)
+	_ plugin.CapabilitiesV2Provider = (*McpServerCatalogPlugin)(nil)
+	_ plugin.UIHintsProvider        = (*McpServerCatalogPlugin)(nil)
+	_ plugin.CLIHintsProvider       = (*McpServerCatalogPlugin)(nil)
 )
+
+// GetCapabilitiesV2 returns the full V2 capabilities discovery document.
+func (p *McpServerCatalogPlugin) GetCapabilitiesV2() plugin.PluginCapabilitiesV2 {
+	basePath := "/api/mcp_catalog/v1alpha1"
+	return plugin.PluginCapabilitiesV2{
+		SchemaVersion: "v1",
+		Plugin: plugin.PluginMeta{
+			Name:        PluginName,
+			Version:     PluginVersion,
+			Description: "McpServer catalog",
+			DisplayName: "MCP Servers",
+			Icon:        "server",
+		},
+		Entities: []plugin.EntityCapabilities{
+			{
+				Kind:        "McpServer",
+				Plural:      "mcpservers",
+				DisplayName: "MCP Server",
+				Description: "Model Context Protocol server entries",
+				Endpoints: plugin.EntityEndpoints{
+					List: basePath + "/mcpservers",
+					Get:  basePath + "/mcpservers/{name}",
+				},
+				Fields: plugin.EntityFields{
+					Columns: []plugin.V2ColumnHint{
+						{Name: "name", DisplayName: "Name", Path: "name", Type: "string", Sortable: true, Width: "lg"},
+						{Name: "deploymentMode", DisplayName: "Deployment", Path: "deploymentMode", Type: "string", Sortable: true, Width: "md"},
+						{Name: "provider", DisplayName: "Provider", Path: "provider", Type: "string", Sortable: true, Width: "md"},
+						{Name: "transportType", DisplayName: "Transport", Path: "transportType", Type: "string", Sortable: true, Width: "sm"},
+						{Name: "toolCount", DisplayName: "Tools", Path: "toolCount", Type: "integer", Sortable: true, Width: "sm"},
+						{Name: "license", DisplayName: "License", Path: "license", Type: "string", Sortable: true, Width: "md"},
+						{Name: "category", DisplayName: "Category", Path: "category", Type: "string", Sortable: true, Width: "md"},
+					},
+					FilterFields: []plugin.V2FilterField{
+						{Name: "name", DisplayName: "Name", Type: "text", Operators: []string{"=", "!=", "LIKE"}},
+						{Name: "deploymentMode", DisplayName: "Deployment Mode", Type: "select", Options: []string{"local", "remote", "hybrid"}, Operators: []string{"=", "!="}},
+						{Name: "provider", DisplayName: "Provider", Type: "text", Operators: []string{"=", "!=", "LIKE"}},
+						{Name: "category", DisplayName: "Category", Type: "text", Operators: []string{"=", "!=", "LIKE"}},
+						{Name: "license", DisplayName: "License", Type: "text", Operators: []string{"=", "!=", "LIKE"}},
+						{Name: "transportType", DisplayName: "Transport Type", Type: "select", Options: []string{"stdio", "sse", "streamable-http"}, Operators: []string{"=", "!="}},
+						{Name: "toolCount", DisplayName: "Tool Count", Type: "number", Operators: []string{"=", ">", "<", ">=", "<="}},
+					},
+					DetailFields: []plugin.V2FieldHint{
+						{Name: "name", DisplayName: "Name", Path: "name", Type: "string", Section: "Overview"},
+						{Name: "description", DisplayName: "Description", Path: "description", Type: "string", Section: "Overview"},
+						{Name: "deploymentMode", DisplayName: "Deployment Mode", Path: "deploymentMode", Type: "string", Section: "Overview"},
+						{Name: "provider", DisplayName: "Provider", Path: "provider", Type: "string", Section: "Overview"},
+						{Name: "category", DisplayName: "Category", Path: "category", Type: "string", Section: "Overview"},
+						{Name: "license", DisplayName: "License", Path: "license", Type: "string", Section: "Overview"},
+						{Name: "serverUrl", DisplayName: "Server URL", Path: "serverUrl", Type: "string", Section: "Connection"},
+						{Name: "image", DisplayName: "Container Image", Path: "image", Type: "string", Section: "Connection"},
+						{Name: "endpoint", DisplayName: "Remote Endpoint", Path: "endpoint", Type: "string", Section: "Connection"},
+						{Name: "supportedTransports", DisplayName: "Supported Transports", Path: "supportedTransports", Type: "string", Section: "Connection"},
+						{Name: "transportType", DisplayName: "Transport Type", Path: "transportType", Type: "string", Section: "Connection"},
+						{Name: "toolCount", DisplayName: "Tool Count", Path: "toolCount", Type: "integer", Section: "Statistics"},
+						{Name: "resourceCount", DisplayName: "Resource Count", Path: "resourceCount", Type: "integer", Section: "Statistics"},
+						{Name: "promptCount", DisplayName: "Prompt Count", Path: "promptCount", Type: "integer", Section: "Statistics"},
+					},
+				},
+				UIHints: &plugin.EntityUIHints{
+					Icon:           "server",
+					NameField:      "name",
+					DetailSections: []string{"Overview", "Connection", "Statistics"},
+				},
+				Actions: []string{"tag", "annotate", "deprecate", "refresh"},
+			},
+		},
+		Sources: &plugin.SourceCapabilities{
+			Manageable:  true,
+			Refreshable: true,
+			Types:       []string{"yaml"},
+		},
+		Actions: []plugin.ActionDefinition{
+			{ID: "tag", DisplayName: "Tag", Description: "Add or remove tags on an entity", Scope: "asset", SupportsDryRun: true, Idempotent: true},
+			{ID: "annotate", DisplayName: "Annotate", Description: "Add or update annotations on an entity", Scope: "asset", SupportsDryRun: true, Idempotent: true},
+			{ID: "deprecate", DisplayName: "Deprecate", Description: "Mark an entity as deprecated", Scope: "asset", SupportsDryRun: true, Idempotent: true},
+			{ID: "refresh", DisplayName: "Refresh", Description: "Refresh entities from a source", Scope: "source", SupportsDryRun: false, Idempotent: true},
+		},
+	}
+}
 
 // Capabilities returns the plugin's advertised capabilities.
 func (p *McpServerCatalogPlugin) Capabilities() plugin.PluginCapabilities {

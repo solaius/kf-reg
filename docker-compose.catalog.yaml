@@ -27,6 +27,7 @@ services:
     volumes:
       - ./catalog/config:/config:ro
       - ./catalog/plugins/mcp/data:/plugins/mcp/data:rw
+      - ./catalog/plugins/knowledge/data:/plugins/knowledge/data:ro
     depends_on:
       postgres:
         condition: service_healthy

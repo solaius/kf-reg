@@ -9,6 +9,7 @@ import ModelCatalogRoutes from './pages/modelCatalog/ModelCatalogRoutes';
 import ModelCatalogSettingsRoutes from './pages/modelCatalogSettings/ModelCatalogSettingsRoutes';
 import CatalogManagementRoutes from './pages/catalogManagement/CatalogManagementRoutes';
 import McpCatalogRoutes from './pages/mcpCatalog/McpCatalogRoutes';
+import GenericCatalogRoutes from './pages/genericCatalog/GenericCatalogRoutes';
 import { modelCatalogUrl } from './routes/modelCatalog/catalogModel';
 import { mcpCatalogUrl, MCP_CATALOG_PAGE_TITLE } from './routes/mcpCatalog/mcpCatalog';
 import {
@@ -71,6 +72,10 @@ export const useNavData = (): NavDataItem[] => {
       label: MCP_CATALOG_PAGE_TITLE,
       path: mcpCatalogUrl(),
     });
+    baseNavItems.push({
+      label: 'Catalog',
+      path: '/catalog',
+    });
   }
 
   return [...baseNavItems, ...useAdminSettings()];
@@ -93,6 +98,7 @@ const AppRoutes: React.FC = () => {
           <Route path={`${mcpCatalogUrl()}/*`} element={<McpCatalogRoutes />} />
           <Route path={`${catalogSettingsUrl()}/*`} element={<ModelCatalogSettingsRoutes />} />
           <Route path={`${catalogManagementUrl()}/*`} element={<CatalogManagementRoutes />} />
+          <Route path="/catalog/*" element={<GenericCatalogRoutes />} />
         </>
       )}
       <Route path="*" element={<NotFound />} />

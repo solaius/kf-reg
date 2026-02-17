@@ -35,6 +35,7 @@ type Server struct {
 	configVersion   string // hash from last ConfigStore.Load
 	rateLimiter     *RefreshRateLimiter
 	secretResolver  SecretResolver
+	overlayStore    *OverlayStore
 	startedAt       time.Time
 	initialLoadDone bool
 	mu              sync.RWMutex
@@ -116,6 +117,12 @@ func (s *Server) Init(ctx context.Context) error {
 	if s.db != nil {
 		if err := s.db.AutoMigrate(&RefreshStatusRecord{}); err != nil {
 			s.logger.Error("failed to auto-migrate refresh status table", "error", err)
+		}
+
+		// Auto-migrate the overlay store table.
+		s.overlayStore = NewOverlayStore(s.db)
+		if err := s.overlayStore.AutoMigrate(); err != nil {
+			s.logger.Error("failed to auto-migrate overlay store table", "error", err)
 		}
 	}
 
@@ -211,11 +218,12 @@ func (s *Server) MountRoutes() chi.Router {
 			_, hasSM := p.(SourceManager)
 			_, hasRP := p.(RefreshProvider)
 			_, hasDP := p.(DiagnosticsProvider)
-			if hasSM || hasRP || hasDP {
+			_, hasAP := p.(ActionProvider)
+			if hasSM || hasRP || hasDP || hasAP {
 				mgmtRouter := managementRouter(p, s.roleExtractor, s)
 				r.Mount("/", mgmtRouter)
 				s.logger.Info("mounted management routes", "plugin", p.Name(),
-					"sourceManager", hasSM, "refresh", hasRP, "diagnostics", hasDP)
+					"sourceManager", hasSM, "refresh", hasRP, "diagnostics", hasDP, "actions", hasAP)
 			}
 		})
 	}
@@ -227,6 +235,7 @@ func (s *Server) MountRoutes() chi.Router {
 
 	// Add plugin info endpoint
 	s.router.Get("/api/plugins", s.pluginsHandler)
+	s.router.Get("/api/plugins/{pluginName}/capabilities", s.capabilitiesHandler)
 
 	return s.router
 }
@@ -404,6 +413,11 @@ func (s *Server) GetConfigStore() ConfigStore {
 // GetSecretResolver returns the server's SecretResolver, or nil if not set.
 func (s *Server) GetSecretResolver() SecretResolver {
 	return s.secretResolver
+}
+
+// GetOverlayStore returns the server's OverlayStore, or nil if no DB is configured.
+func (s *Server) GetOverlayStore() *OverlayStore {
+	return s.overlayStore
 }
 
 // persistConfig saves the current in-memory config to the ConfigStore using
@@ -585,6 +599,44 @@ func pluginConfigKey(p CatalogPlugin) string {
 	return p.Name()
 }
 
+// capabilitiesHandler returns V2 capabilities for a specific plugin.
+func (s *Server) capabilitiesHandler(w http.ResponseWriter, r *http.Request) {
+	pluginName := chi.URLParam(r, "pluginName")
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// Find the plugin among initialized plugins.
+	var found CatalogPlugin
+	var basePath string
+	for _, p := range s.plugins {
+		if p.Name() == pluginName {
+			found = p
+			if bp, ok := p.(BasePathProvider); ok {
+				basePath = bp.BasePath()
+			} else {
+				basePath = fmt.Sprintf("/api/%s_catalog/%s", p.Name(), p.Version())
+			}
+			break
+		}
+	}
+
+	if found == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"error": fmt.Sprintf("plugin %q not found", pluginName),
+		})
+		return
+	}
+
+	v2caps := BuildCapabilitiesV2(found, basePath)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(v2caps)
+}
+
 // pluginsHandler returns information about registered plugins.
 func (s *Server) pluginsHandler(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
@@ -594,20 +646,22 @@ func (s *Server) pluginsHandler(w http.ResponseWriter, r *http.Request) {
 		SourceManager bool `json:"sourceManager"`
 		Refresh       bool `json:"refresh"`
 		Diagnostics   bool `json:"diagnostics"`
+		Actions       bool `json:"actions"`
 	}
 
 	type pluginInfo struct {
-		Name           string              `json:"name"`
-		Version        string              `json:"version"`
-		Description    string              `json:"description"`
-		BasePath       string              `json:"basePath"`
-		Healthy        bool                `json:"healthy"`
-		EntityKinds    []string            `json:"entityKinds,omitempty"`
-		Capabilities   *PluginCapabilities `json:"capabilities,omitempty"`
-		Status         *PluginStatus       `json:"status,omitempty"`
-		Management     *managementCaps     `json:"management,omitempty"`
-		UIHintsData    *UIHints            `json:"uiHints,omitempty"`
-		CLIHintsData   *CLIHints           `json:"cliHints,omitempty"`
+		Name           string                `json:"name"`
+		Version        string                `json:"version"`
+		Description    string                `json:"description"`
+		BasePath       string                `json:"basePath"`
+		Healthy        bool                  `json:"healthy"`
+		EntityKinds    []string              `json:"entityKinds,omitempty"`
+		Capabilities   *PluginCapabilities   `json:"capabilities,omitempty"`
+		CapabilitiesV2 *PluginCapabilitiesV2 `json:"capabilitiesV2,omitempty"`
+		Status         *PluginStatus         `json:"status,omitempty"`
+		Management     *managementCaps       `json:"management,omitempty"`
+		UIHintsData    *UIHints              `json:"uiHints,omitempty"`
+		CLIHintsData   *CLIHints             `json:"cliHints,omitempty"`
 	}
 
 	plugins := make([]pluginInfo, 0, len(s.plugins)+len(s.failedPlugins))
@@ -640,11 +694,13 @@ func (s *Server) pluginsHandler(w http.ResponseWriter, r *http.Request) {
 		_, hasSM := p.(SourceManager)
 		_, hasRP := p.(RefreshProvider)
 		_, hasDP := p.(DiagnosticsProvider)
-		if hasSM || hasRP || hasDP {
+		_, hasAP := p.(ActionProvider)
+		if hasSM || hasRP || hasDP || hasAP {
 			info.Management = &managementCaps{
 				SourceManager: hasSM,
 				Refresh:       hasRP,
 				Diagnostics:   hasDP,
+				Actions:       hasAP,
 			}
 		}
 
@@ -656,6 +712,10 @@ func (s *Server) pluginsHandler(w http.ResponseWriter, r *http.Request) {
 			hints := cp.CLIHints()
 			info.CLIHintsData = &hints
 		}
+
+		// Build and include V2 capabilities inline.
+		v2caps := BuildCapabilitiesV2(p, basePath)
+		info.CapabilitiesV2 = &v2caps
 
 		plugins = append(plugins, info)
 	}
