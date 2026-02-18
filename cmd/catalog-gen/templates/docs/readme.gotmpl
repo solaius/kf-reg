@@ -1,0 +1,53 @@
+# {{.DisplayName}} Plugin
+
+## Overview
+
+The **{{.DisplayName}}** plugin provides a catalog of {{.EntityName}} assets
+for the Kubeflow Model Registry catalog platform.
+
+- **Entity**: {{.EntityName}}
+- **Package**: `{{.Package}}`
+- **API Base Path**: `{{.BasePath}}`
+- **Version**: See `plugin.yaml`
+
+## Quick Start
+
+1. Import the plugin in `cmd/catalog-server/main.go`:
+
+   ```go
+   import _ "{{.Package}}"
+   ```
+
+2. Add a source to `sources.yaml`:
+
+   ```yaml
+   catalogs:
+     {{.Name}}:
+       sources:
+         - id: "my-source"
+           type: "yaml"
+           properties:
+             yamlCatalogPath: "./data/{{.EntityNameLower}}s.yaml"
+   ```
+
+3. Start the server and verify:
+
+   ```bash
+   curl http://localhost:8080{{.BasePath}}/{{.EntityNameLower}}s | jq
+   ```
+
+## Configuration
+
+See [Provider Guide](provider-guide.md) for source configuration details.
+
+## Schema
+
+See [Schema Guide](schema-guide.md) for entity field mapping.
+
+## Testing
+
+See [Testing](testing.md) for how to run tests and conformance suite.
+
+## Publishing
+
+See [Publishing](publishing.md) for versioning and release process.

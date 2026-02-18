@@ -11,6 +11,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	libconformance "github.com/kubeflow/model-registry/pkg/catalog/conformance"
 )
 
 var serverURL string
@@ -359,6 +361,22 @@ func TestBasePathsUnique(t *testing.T) {
 		}
 		seen[p.BasePath] = p.Name
 	}
+}
+
+// TestConformanceV2 runs the importable conformance harness.
+func TestConformanceV2(t *testing.T) {
+	if serverURL == "" {
+		t.Skip("requires running catalog-server (set CATALOG_SERVER_URL)")
+	}
+
+	cfg := libconformance.HarnessConfig{
+		ServerURL:      serverURL,
+		SkipCategories: []string{"security", "observability", "openapi"},
+	}
+	result := libconformance.RunConformance(t, cfg)
+
+	// Log summary.
+	t.Log(result.Summary())
 }
 
 // TestPagination verifies pageSize parameter is respected.

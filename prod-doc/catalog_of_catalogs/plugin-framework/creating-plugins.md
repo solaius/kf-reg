@@ -12,6 +12,10 @@ annotate, deprecate) via the shared `BuiltinActionHandler`.
 The **knowledge sources plugin** (`catalog/plugins/knowledge/`) is the
 canonical minimal example.  Every code snippet in this guide is drawn from it.
 
+> **Phase 9 shortcut:** Use `catalog-gen init --name=myplugin` to scaffold all
+> files automatically, then edit the generated code. See
+> [catalog-gen](./catalog-gen.md) for the automated workflow.
+
 ## Plugin Anatomy
 
 ```
@@ -781,6 +785,41 @@ curl -s -X POST \
 
 ---
 
+## Step 9: Create plugin.yaml (Phase 9)
+
+Create a `plugin.yaml` file in your plugin directory with distribution and
+governance metadata:
+
+```yaml
+# catalog/plugins/myplugin/plugin.yaml
+apiVersion: catalog.kubeflow.org/v1alpha1
+kind: CatalogPlugin
+metadata:
+  name: myplugin
+spec:
+  displayName: My Entities
+  description: Catalog of custom entities
+  version: "0.1.0"
+  owners:
+    - team: my-team
+      contact: "#my-team"
+  compatibility:
+    catalogServer:
+      minVersion: "0.9.0"
+      maxVersion: "1.x"
+    frameworkApi: v1alpha1
+  providers:
+    - yaml
+  license: Apache-2.0
+  repository: https://github.com/my-org/my-plugin
+```
+
+This file is separate from `catalog.yaml` (which defines the entity schema).
+It enables governance checks, version management, and inclusion in the
+supported plugin index. See [catalog-gen](./catalog-gen.md) for details.
+
+---
+
 ## Readiness Checklist
 
 | Check | Description |
@@ -793,6 +832,8 @@ curl -s -X POST \
 | Configuration | `sources.yaml` section with at least one enabled source and a valid `yamlCatalogPath` |
 | Health | `Healthy()` returns `true` after `Init` completes successfully |
 | Conformance | All conformance tests pass for your plugin |
+| plugin.yaml | Distribution metadata with version, owners, compatibility, license (Phase 9) |
+| Governance | `catalog-gen validate --governance` passes all 7 checks (Phase 9) |
 
 ---
 

@@ -430,6 +430,93 @@ that uses `httptest.Server` to mock the catalog server:
 | `TestDiscoverPluginsIntegration` | Full discovery: 2 plugins produce correct command tree |
 | `TestInferColumns` | Fallback column inference from first item keys |
 
+## Importable Conformance Harness (Phase 9)
+
+Phase 9 adds an importable conformance library at `pkg/catalog/conformance/` that external plugin developers can use to validate their plugins against the framework contract programmatically.
+
+### Architecture
+
+```
+pkg/catalog/conformance/
+├── harness.go                        # RunConformance entry point
+├── config.go                         # HarnessConfig and ExpectedCaps
+├── types.go                          # Exported response types
+├── helpers.go                        # HTTP helpers (GetJSON, WaitForReady)
+├── report.go                         # ConformanceResult with JSON output
+├── category_a_capabilities.go        # Category A: Capability contract tests
+├── category_b_list_get.go            # Category B: List/get contract tests
+├── category_c_sources.go             # Category C: Source management tests
+├── category_d_security.go            # Category D: Tenancy/RBAC tests (skippable)
+├── category_e_observability.go       # Category E: Audit/jobs tests (skippable)
+└── category_f_openapi.go             # Category F: OpenAPI merge tests (skippable)
+```
+
+### Usage
+
+```go
+import (
+    "testing"
+    "github.com/kubeflow/model-registry/pkg/catalog/conformance"
+)
+
+func TestMyPluginConformance(t *testing.T) {
+    cfg := conformance.HarnessConfig{
+        PluginName:          "myplugin",
+        ServerURL:           "http://localhost:8080",
+        ExpectedEntityKinds: []string{"MyEntity"},
+        ExpectedCaps: conformance.ExpectedCaps{
+            HasSources:  true,
+            HasActions:  true,
+            HasRefresh:  true,
+            HasUIHints:  true,
+        },
+        SkipCategories: []string{"security", "observability"},
+    }
+    result := conformance.RunConformance(t, cfg)
+    t.Logf("Conformance: %d/%d passed", result.Passed, result.Total)
+}
+```
+
+### Test Categories
+
+| Category | ID | Tests | Skippable |
+|----------|----|-------|-----------|
+| A: Capabilities | `capabilities` | Capability endpoint returns valid schema, UI hints validate, plugin meta fields present | No |
+| B: List/Get | `list_get` | Pagination (no duplicates, stable ordering), filterQuery, get-by-id/name, pageSize | No |
+| C: Sources | `sources` | Validate errors for invalid sources, apply persists, refresh updates, enable/disable | No |
+| D: Security | `security` | Namespace pre-filter, RBAC 403, consistent error body | Yes |
+| E: Observability | `observability` | Audit events for management actions, job status | Yes |
+| F: OpenAPI | `openapi` | Plugin OpenAPI compiles, pagination params present | Yes |
+
+### ConformanceResult
+
+```go
+type ConformanceResult struct {
+    PluginName string           `json:"pluginName"`
+    Total      int              `json:"total"`
+    Passed     int              `json:"passed"`
+    Failed     int              `json:"failed"`
+    Skipped    int              `json:"skipped"`
+    Categories []CategoryResult `json:"categories"`
+}
+```
+
+Results can be output as JSON for CI integration or as a human-readable summary.
+
+### Differences from tests/conformance/
+
+| Aspect | tests/conformance/ | pkg/catalog/conformance/ |
+|--------|--------------------|--------------------------|
+| Scope | All plugins on a live server | Single plugin, configurable |
+| Import | Not importable (test package) | Importable library |
+| Categories | 5 inline test files | 6 structured categories (A-F) |
+| Output | Go test pass/fail | ConformanceResult with JSON |
+| Skipping | Manual | SkipCategories config field |
+
+The existing `tests/conformance/` suite delegates to the harness via `TestConformanceV2`.
+
+---
+
 ## Key Files
 
 | File | Purpose |
@@ -450,6 +537,12 @@ that uses `httptest.Server` to mock the catalog server:
 | `tests/conformance/endpoints_test.go` | List and get endpoint validation |
 | `tests/conformance/actions_test.go` | Action invocation (dry-run) validation |
 | `tests/conformance/filters_test.go` | Filter and sort query acceptance validation |
+| `pkg/catalog/conformance/harness.go` | Importable conformance entry point (Phase 9) |
+| `pkg/catalog/conformance/config.go` | HarnessConfig and ExpectedCaps (Phase 9) |
+| `pkg/catalog/conformance/report.go` | ConformanceResult with JSON output (Phase 9) |
+| `pkg/catalog/conformance/category_a_capabilities.go` | Category A: capability contract tests (Phase 9) |
+| `pkg/catalog/conformance/category_b_list_get.go` | Category B: list/get contract tests (Phase 9) |
+| `pkg/catalog/conformance/category_c_sources.go` | Category C: source management tests (Phase 9) |
 
 ---
 

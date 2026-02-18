@@ -91,6 +91,18 @@ func initCatalogPlugin(name, entityName, packageName, outputDir string) error {
 		return fmt.Errorf("failed to write config comment: %w", err)
 	}
 
+	// Generate plugin.yaml with defaults
+	pluginYAMLData := map[string]any{
+		"Name":        sanitizeCatalogName(name),
+		"DisplayName": capitalize(sanitizeCatalogName(name)),
+		"Description": fmt.Sprintf("Catalog of %s assets", sanitizeCatalogName(name)),
+	}
+	pluginYAMLPath := filepath.Join(outputDir, "plugin.yaml")
+	if err := executeTemplate(TmplPluginYAML, pluginYAMLPath, pluginYAMLData); err != nil {
+		return fmt.Errorf("failed to generate plugin.yaml: %w", err)
+	}
+	fmt.Printf("  Created: plugin.yaml\n")
+
 	// Change to output directory to use generate functions
 	originalDir, err := os.Getwd()
 	if err != nil {
@@ -168,6 +180,18 @@ func initCatalogPlugin(name, entityName, packageName, outputDir string) error {
 	// Create symlink to shared common schemas (BaseResource, etc.)
 	if err := ensureCommonLibSymlink(); err != nil {
 		return fmt.Errorf("failed to create common lib symlink: %w", err)
+	}
+
+	// Generate conformance test scaffold
+	fmt.Println("\n=== Generating conformance scaffold ===")
+	if err := generateConformanceScaffold(config); err != nil {
+		return fmt.Errorf("failed to generate conformance scaffold: %w", err)
+	}
+
+	// Generate docs kit
+	fmt.Println("\n=== Generating docs kit ===")
+	if err := generateDocsKit(config); err != nil {
+		return fmt.Errorf("failed to generate docs kit: %w", err)
 	}
 
 	fmt.Println("\n=== Generating auto-regenerated files ===")

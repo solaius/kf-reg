@@ -1,0 +1,47 @@
+# Schema Guide: {{.DisplayName}}
+
+## Entity: {{.EntityName}}
+
+The {{.EntityName}} entity extends `BaseResource` with the following fields.
+
+### BaseResource Fields (inherited)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Unique name |
+| `id` | string | Server-assigned ID |
+| `externalId` | string | External identifier |
+| `description` | string | Human-readable description |
+| `customProperties` | map | Arbitrary key-value metadata |
+| `createTimeSinceEpoch` | int64 | Creation timestamp |
+| `lastUpdateTimeSinceEpoch` | int64 | Last update timestamp |
+
+### Custom Properties
+
+Custom properties are defined in `catalog.yaml` under `spec.entity.properties`.
+After modifying properties, run:
+
+```bash
+catalog-gen generate
+```
+
+This regenerates the entity model, OpenAPI components, and filter mappings.
+
+## OpenAPI Specification
+
+The OpenAPI spec is located at `api/openapi/src/openapi.yaml`.
+Generated components are at `api/openapi/src/generated/components.yaml`.
+
+After any schema change:
+
+```bash
+catalog-gen generate
+make gen/openapi-server
+```
+
+## Filtering
+
+List endpoints support `filterQuery` with these operators:
+`=`, `!=`, `>`, `<`, `>=`, `<=`, `LIKE`, `ILIKE`, `IN`, `AND`, `OR`
+
+Example: `?filterQuery=name LIKE '%test%'`

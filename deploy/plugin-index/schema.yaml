@@ -1,0 +1,55 @@
+# JSON Schema for PluginIndexEntry
+type: object
+required: [apiVersion, kind, metadata, spec]
+properties:
+  apiVersion:
+    type: string
+    enum: ["catalog.kubeflow.org/v1alpha1"]
+  kind:
+    type: string
+    enum: ["PluginIndexEntry"]
+  metadata:
+    type: object
+    required: [name]
+    properties:
+      name:
+        type: string
+  spec:
+    type: object
+    required: [displayName, tier, module, version, compatibility, owners]
+    properties:
+      displayName:
+        type: string
+      description:
+        type: string
+      tier:
+        type: string
+        enum: ["built-in", "supported", "community"]
+      module:
+        type: string
+      version:
+        type: string
+      compatibility:
+        type: object
+        properties:
+          catalogServer:
+            type: object
+            properties:
+              minVersion:
+                type: string
+              maxVersion:
+                type: string
+          frameworkApi:
+            type: string
+      owners:
+        type: array
+        items:
+          type: object
+          properties:
+            team:
+              type: string
+      security:
+        type: object
+        properties:
+          license:
+            type: string

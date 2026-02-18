@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/kubeflow/model-registry/pkg/catalog/plugin"
 	"gopkg.in/yaml.v3"
 )
 
@@ -194,6 +195,12 @@ func mlmdValueField(specType string) string {
 	default:
 		return "StringValue"
 	}
+}
+
+// loadPluginConfig reads and parses plugin.yaml from the given directory.
+func loadPluginConfig(dir string) (*plugin.PluginMetadataSpec, error) {
+	path := filepath.Join(dir, "plugin.yaml")
+	return plugin.LoadPluginMetadata(path)
 }
 
 // isStructType returns true if the type is a struct/object type.

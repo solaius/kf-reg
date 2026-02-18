@@ -38,6 +38,10 @@ Usage:
 	rootCmd.AddCommand(newAddArtifactCmd())
 	rootCmd.AddCommand(newGenerateCmd())
 	rootCmd.AddCommand(newGenTestdataCmd())
+	rootCmd.AddCommand(newValidateCmd())
+	rootCmd.AddCommand(newBumpVersionCmd())
+	rootCmd.AddCommand(newBuildServerCmd())
+	rootCmd.AddCommand(newCompatMatrixCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

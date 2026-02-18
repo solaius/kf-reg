@@ -83,6 +83,12 @@ type EntityUIHints struct {
 	Color          string   `json:"color,omitempty"`
 	NameField      string   `json:"nameField,omitempty"`      // field to use as display name
 	DetailSections []string `json:"detailSections,omitempty"` // ordered section names
+
+	// Extended UI hints (Phase 9). Pointer types for backward compatibility.
+	ListView    *ListViewHints      `json:"listView,omitempty"`
+	DetailView  *DetailViewHints    `json:"detailView,omitempty"`
+	Search      *SearchHints        `json:"search,omitempty"`
+	ActionHints *ActionDisplayHints `json:"actionHints,omitempty"`
 }
 
 // SourceCapabilities describes a plugin's data source management abilities.

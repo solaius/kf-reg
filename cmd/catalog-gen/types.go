@@ -52,3 +52,31 @@ type APIConfig struct {
 	BasePath string `yaml:"basePath"`
 	Port     int    `yaml:"port"`
 }
+
+// ServerManifest is the top-level structure for catalog-server-manifest.yaml.
+type ServerManifest struct {
+	APIVersion string             `yaml:"apiVersion"`
+	Kind       string             `yaml:"kind"` // CatalogServerBuild
+	Spec       ServerManifestSpec `yaml:"spec"`
+}
+
+// ServerManifestSpec describes the server build configuration.
+type ServerManifestSpec struct {
+	Base    ServerBase        `yaml:"base"`
+	Plugins []ServerPluginRef `yaml:"plugins"`
+}
+
+// ServerBase describes the base server module and version.
+type ServerBase struct {
+	Image            string `yaml:"image,omitempty"`
+	FrameworkVersion string `yaml:"frameworkVersion,omitempty"`
+	Module           string `yaml:"module"`
+	Version          string `yaml:"version"`
+}
+
+// ServerPluginRef references a plugin to include in the server build.
+type ServerPluginRef struct {
+	Name    string `yaml:"name"`
+	Module  string `yaml:"module"`
+	Version string `yaml:"version"`
+}

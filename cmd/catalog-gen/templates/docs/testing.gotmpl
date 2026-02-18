@@ -1,0 +1,56 @@
+# Testing: {{.DisplayName}}
+
+## Unit Tests
+
+Run unit tests with:
+
+```bash
+go test ./... -count=1
+```
+
+## Conformance Suite
+
+The conformance suite validates that this plugin meets the catalog platform contract.
+
+### Prerequisites
+
+A running catalog server with the {{.Name}} plugin loaded:
+
+```bash
+docker compose -f docker-compose.catalog.yaml up -d
+```
+
+### Running Conformance Tests
+
+```bash
+CATALOG_SERVER_URL=http://localhost:8080 go test ./tests/conformance/ -v -count=1
+```
+
+### Conformance Categories
+
+| Category | Description |
+|----------|-------------|
+| A: Capabilities | Plugin registration, V2 capabilities, schema version |
+| B: List/Get | Entity list, get, filtering, pagination |
+| C: Sources | Source management, refresh, apply |
+| D: Security | CORS headers, content-type enforcement |
+| E: Observability | Health endpoints (/livez, /readyz) |
+| F: OpenAPI | Spec availability, schema validation |
+
+### Skipping Categories
+
+```go
+cfg := conformance.HarnessConfig{
+    SkipCategories: []string{"security", "openapi"},
+}
+```
+
+## Test Data
+
+Generate test data with:
+
+```bash
+catalog-gen gen-testdata
+```
+
+This creates sample data files in `testdata/`.

@@ -1,0 +1,39 @@
+# Example catalog-server-manifest.yaml for catalog-gen build-server.
+#
+# This manifest defines which plugins to include in a custom catalog-server
+# build. Use it with:
+#   catalog-gen build-server examples/catalog-server-manifest.yaml --output build/server
+#
+apiVersion: catalog.kubeflow.org/v1alpha1
+kind: CatalogServerBuild
+spec:
+  base:
+    image: catalog-server:latest
+    frameworkVersion: v1alpha1
+    module: github.com/kubeflow/model-registry
+    version: v0.9.0
+  plugins:
+    - name: model
+      module: github.com/kubeflow/model-registry/catalog/plugins/model
+      version: v0.9.0
+    - name: mcp
+      module: github.com/kubeflow/model-registry/catalog/plugins/mcp
+      version: v0.9.0
+    - name: knowledge
+      module: github.com/kubeflow/model-registry/catalog/plugins/knowledge
+      version: v0.9.0
+    - name: prompts
+      module: github.com/kubeflow/model-registry/catalog/plugins/prompts
+      version: v0.9.0
+    - name: agents
+      module: github.com/kubeflow/model-registry/catalog/plugins/agents
+      version: v0.9.0
+    - name: guardrails
+      module: github.com/kubeflow/model-registry/catalog/plugins/guardrails
+      version: v0.9.0
+    - name: policies
+      module: github.com/kubeflow/model-registry/catalog/plugins/policies
+      version: v0.9.0
+    - name: skills
+      module: github.com/kubeflow/model-registry/catalog/plugins/skills
+      version: v0.9.0

@@ -85,8 +85,63 @@ func (p *McpServerCatalogPlugin) GetCapabilitiesV2() plugin.PluginCapabilitiesV2
 				},
 				UIHints: &plugin.EntityUIHints{
 					Icon:           "server",
+					Color:          "#0066CC",
 					NameField:      "name",
 					DetailSections: []string{"Overview", "Connection", "Statistics"},
+					ListView: &plugin.ListViewHints{
+						TitleField: "name",
+						Columns: []plugin.ColumnDisplay{
+							{Field: "name", Label: "Name", Display: plugin.DisplayLink},
+							{Field: "deploymentMode", Label: "Deployment", Display: plugin.DisplayBadge},
+							{Field: "provider", Label: "Provider", Display: plugin.DisplayText},
+							{Field: "transportType", Label: "Transport", Display: plugin.DisplayBadge, Width: "sm"},
+							{Field: "toolCount", Label: "Tools", Display: plugin.DisplayText, Width: "sm"},
+						},
+						DefaultSort: &plugin.SortHint{Field: "name", Direction: "asc"},
+					},
+					DetailView: &plugin.DetailViewHints{
+						Sections: []plugin.DetailSection{
+							{
+								Title: "Overview",
+								Fields: []plugin.FieldDisplay{
+									{Field: "name", Label: "Name", Display: plugin.DisplayText},
+									{Field: "description", Label: "Description", Display: plugin.DisplayMarkdown},
+									{Field: "deploymentMode", Label: "Deployment Mode", Display: plugin.DisplayBadge},
+									{Field: "provider", Label: "Provider", Display: plugin.DisplayText},
+									{Field: "category", Label: "Category", Display: plugin.DisplayBadge},
+								},
+							},
+							{
+								Title: "Connection",
+								Fields: []plugin.FieldDisplay{
+									{Field: "serverUrl", Label: "Server URL", Display: plugin.DisplayLink},
+									{Field: "endpoint", Label: "Endpoint", Display: plugin.DisplayLink},
+									{Field: "image", Label: "Container Image", Display: plugin.DisplayCode},
+									{Field: "transportType", Label: "Transport", Display: plugin.DisplayBadge},
+								},
+							},
+							{
+								Title: "Statistics",
+								Fields: []plugin.FieldDisplay{
+									{Field: "toolCount", Label: "Tools", Display: plugin.DisplayText},
+									{Field: "resourceCount", Label: "Resources", Display: plugin.DisplayText},
+									{Field: "promptCount", Label: "Prompts", Display: plugin.DisplayText},
+								},
+							},
+						},
+					},
+					Search: &plugin.SearchHints{
+						SearchableFields: []string{"name", "description", "provider", "category"},
+						Facets: []plugin.FacetHint{
+							{Field: "deploymentMode", Display: plugin.DisplayBadge},
+							{Field: "transportType", Display: plugin.DisplayBadge},
+							{Field: "category", Display: plugin.DisplayBadge},
+						},
+					},
+					ActionHints: &plugin.ActionDisplayHints{
+						Primary:   []string{"refresh"},
+						Secondary: []string{"tag", "annotate", "deprecate"},
+					},
 				},
 				Actions: []string{"tag", "annotate", "deprecate", "refresh"},
 			},

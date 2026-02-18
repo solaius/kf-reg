@@ -1,0 +1,19 @@
+apiVersion: catalog.kubeflow.org/v1alpha1
+kind: PluginIndexEntry
+metadata:
+  name: policies
+spec:
+  displayName: Policies
+  description: Catalog of governance policies for AI systems
+  tier: built-in
+  module: github.com/kubeflow/model-registry/catalog/plugins/policies
+  version: v1alpha1
+  compatibility:
+    catalogServer:
+      minVersion: "0.9.0"
+      maxVersion: "1.x"
+    frameworkApi: v1alpha1
+  owners:
+    - team: ai-platform
+  security:
+    license: Apache-2.0

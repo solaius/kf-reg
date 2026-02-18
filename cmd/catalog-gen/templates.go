@@ -25,6 +25,10 @@ const (
 
 	// server templates
 	TmplServerOpenAPIServiceImpl = "templates/server/openapi_service_impl.gotmpl"
+	TmplServerMain               = "templates/server/main.gotmpl"
+	TmplServerGoMod              = "templates/server/go_mod.gotmpl"
+	TmplServerDockerfile         = "templates/server/dockerfile.gotmpl"
+	TmplServerCompatMatrix       = "templates/server/compat_matrix.gotmpl"
 
 	// catalog templates
 	TmplCatalogLoader = "templates/catalog/loader.gotmpl"
@@ -42,8 +46,19 @@ const (
 	TmplMiscOpenAPIGeneratorIgnore = "templates/misc/openapi_generator_ignore.gotmpl"
 
 	// plugin templates
-	TmplPluginPlugin   = "templates/plugin/plugin.gotmpl"
-	TmplPluginRegister = "templates/plugin/register.gotmpl"
+	TmplPluginPlugin     = "templates/plugin/plugin.gotmpl"
+	TmplPluginRegister   = "templates/plugin/register.gotmpl"
+	TmplPluginYAML       = "templates/plugin/plugin_yaml.gotmpl"
+
+	// conformance templates
+	TmplConformanceTest = "templates/conformance/conformance_test.gotmpl"
+
+	// docs templates
+	TmplDocsReadme        = "templates/docs/readme.gotmpl"
+	TmplDocsProviderGuide = "templates/docs/provider_guide.gotmpl"
+	TmplDocsSchemaGuide   = "templates/docs/schema_guide.gotmpl"
+	TmplDocsTesting       = "templates/docs/testing.gotmpl"
+	TmplDocsPublishing    = "templates/docs/publishing.gotmpl"
 
 	// agent templates
 	TmplAgentClaudeMD             = "templates/agent/claude_md.gotmpl"

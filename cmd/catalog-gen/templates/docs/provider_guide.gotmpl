@@ -1,0 +1,40 @@
+# Provider Guide: {{.DisplayName}}
+
+## Supported Providers
+
+{{range .Providers}}- **{{.}}**
+{{end}}
+
+## YAML Provider
+
+The YAML provider reads {{.EntityName}} definitions from local YAML files.
+
+### Source Configuration
+
+```yaml
+catalogs:
+  {{.Name}}:
+    sources:
+      - id: "local-data"
+        name: "Local {{.DisplayName}}"
+        type: "yaml"
+        properties:
+          yamlCatalogPath: "./data/{{.EntityNameLower}}s.yaml"
+```
+
+### Data Format
+
+```yaml
+{{.EntityNameLower}}s:
+  - name: "example-{{.EntityNameLower}}"
+    description: "An example {{.EntityName}}"
+    # Add entity-specific properties here
+```
+
+## Adding a New Provider
+
+1. Create `internal/catalog/providers/<type>_provider.go`
+2. Implement the `Provider` interface
+3. Register the provider in `plugin.go`
+4. Update `plugin.yaml` providers list
+5. Run `catalog-gen validate` to verify

@@ -323,6 +323,93 @@ The authorization middleware maps every HTTP request to a `(resource, verb)` tup
 | `POST *:action` | `actions` | `execute` |
 | `DELETE /{basePath}/management/sources/{id}` | `catalogsources` | `delete` |
 
+## Plugin Metadata: plugin.yaml (Phase 9)
+
+Each plugin has a `plugin.yaml` file that serves as distribution and governance metadata. This is separate from `catalog.yaml` (which defines the entity schema).
+
+```yaml
+apiVersion: catalog.kubeflow.org/v1alpha1
+kind: CatalogPlugin
+metadata:
+  name: mcp
+spec:
+  displayName: MCP Servers
+  description: Catalog of MCP server configurations
+  version: "0.9.0"
+  owners:
+    - team: ai-platform
+      contact: "#ai-platform"
+  compatibility:
+    catalogServer:
+      minVersion: "0.9.0"
+      maxVersion: "1.x"
+    frameworkApi: v1alpha1
+  providers:
+    - yaml
+  license: Apache-2.0
+  repository: https://github.com/kubeflow/model-registry
+```
+
+### Go Types
+
+```go
+// pkg/catalog/plugin/plugin_metadata.go
+type PluginMetadataSpec struct {
+    APIVersion string             `yaml:"apiVersion" json:"apiVersion"`
+    Kind       string             `yaml:"kind" json:"kind"`
+    Metadata   PluginMetadataName `yaml:"metadata" json:"metadata"`
+    Spec       PluginMetadataBody `yaml:"spec" json:"spec"`
+}
+```
+
+Load and validate with `LoadPluginMetadata(path)` and `ValidatePluginMetadata(spec)`. See [catalog-gen](./catalog-gen.md) for the full plugin.yaml reference.
+
+## UI Hints Formalization (Phase 9)
+
+Phase 9 extends `EntityUIHints` with structured display type definitions for richer plugin rendering. The extended schema adds 4 optional pointer fields to the existing struct for backward compatibility:
+
+```go
+// pkg/catalog/plugin/capabilities_types.go
+type EntityUIHints struct {
+    Icon           string              `json:"icon,omitempty"`
+    Color          string              `json:"color,omitempty"`
+    NameField      string              `json:"nameField,omitempty"`
+    DetailSections []string            `json:"detailSections,omitempty"`
+    // Phase 9 extensions
+    ListView       *ListViewHints      `json:"listView,omitempty"`
+    DetailView     *DetailViewHints    `json:"detailView,omitempty"`
+    Search         *SearchHints        `json:"search,omitempty"`
+    ActionHints    *ActionDisplayHints `json:"actionHints,omitempty"`
+}
+```
+
+### Field Display Types
+
+The `FieldDisplayType` enum defines 11 rendering modes for entity fields:
+
+| Type | Description |
+|------|-------------|
+| `text` | Plain text (default) |
+| `markdown` | Rendered markdown content |
+| `badge` | Colored badge/chip (e.g., status indicators) |
+| `tags` | Tag/label collection |
+| `link` | Clickable URL |
+| `repoRef` | Repository reference with icon |
+| `imageRef` | Container image reference |
+| `dateTime` | Formatted date/time |
+| `code` | Monospace code block |
+| `json` | JSON viewer |
+| `secretRef` | Masked secret reference (never displays raw values) |
+
+### Validation
+
+UI hints are validated with `ValidateUIHints(hints *EntityUIHints)` which checks:
+- Display types are valid enum values
+- Column references exist in field definitions
+- secretRef fields are flagged for safety review
+
+See [Capabilities Discovery](../universal-assets/capabilities-discovery.md) for the full V2 capabilities schema.
+
 ## Key Files
 
 | File | Purpose |
@@ -331,6 +418,11 @@ The authorization middleware maps every HTTP request to a `(resource, verb)` tup
 | `pkg/catalog/plugin/registry.go` | Global plugin registry (Register, All, Get) |
 | `pkg/catalog/plugin/server.go` | Server lifecycle, route mounting, health endpoints, reconcile loop |
 | `cmd/catalog-server/main.go` | Server entry point with plugin imports and startup |
+| `pkg/catalog/plugin/plugin_metadata.go` | plugin.yaml types, load, validate, semver (Phase 9) |
+| `pkg/catalog/plugin/ui_hints_types.go` | Formalized UI hints: 11 display types (Phase 9) |
+| `pkg/catalog/plugin/ui_hints_validator.go` | UI hints validation (Phase 9) |
+| `pkg/catalog/plugin/governance_checks.go` | 7 governance checks (Phase 9) |
+| `cmd/catalog-gen/` | Plugin scaffolding and build tool (Phase 9) |
 | `pkg/tenancy/` | Tenant context, middleware, resolvers (Phase 8) |
 | `pkg/authz/` | Authorization: SAR, identity, caching, middleware, mapper (Phase 8) |
 | `pkg/audit/` | Audit events: middleware, handlers, retention (Phase 8) |

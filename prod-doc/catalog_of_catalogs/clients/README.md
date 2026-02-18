@@ -17,6 +17,7 @@ All three client surfaces are **capabilities-driven** -- they discover plugins a
 - **BFF** proxies catalog-server API to the frontend with path translation
 - **Generic UI** renders list/detail/action views from V2 capabilities
 - **catalogctl** builds dynamic command trees from plugin discovery
+- **Conformance harness** (Phase 9) -- importable library at `pkg/catalog/conformance/` with 6 test categories and JSON reports
 
 ## Architecture Overview
 

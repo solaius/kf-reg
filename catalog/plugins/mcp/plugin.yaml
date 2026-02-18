@@ -1,0 +1,21 @@
+apiVersion: catalog.kubeflow.org/v1alpha1
+kind: CatalogPlugin
+metadata:
+  name: mcp
+spec:
+  displayName: MCP Servers
+  description: Catalog of Model Context Protocol servers, tools, and resources
+  version: "0.9.0"
+  owners:
+    - team: ai-platform
+      contact: "#ai-platform"
+  compatibility:
+    catalogServer:
+      minVersion: "0.9.0"
+      maxVersion: "1.x"
+    frameworkApi: v1alpha1
+  providers:
+    - yaml
+    - http
+  license: Apache-2.0
+  repository: https://github.com/kubeflow/model-registry

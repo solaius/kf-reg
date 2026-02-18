@@ -1,6 +1,6 @@
 # Catalog of Catalogs — Open Items & TODOs
 
-Aggregated from all Phase 1–7 implementation reports. Organized by category with source milestone references.
+Aggregated from all Phase 1–9 implementation reports. Organized by category with source milestone references.
 
 ---
 
@@ -39,6 +39,9 @@ Aggregated from all Phase 1–7 implementation reports. Organized by category wi
 - [ ] **OpenAPI spec fetching for `openapi_operation` skills**: Skills with `skillType: openapi_operation` reference external OpenAPI specs but fetching/resolution is deferred. *(M6.5)*
 - [ ] **OCI bundle resolution for Guardrails/Policies `bundleRef`**: Requires OCI provider (deferred to Phase 6.5+). *(M6.4)*
 - [ ] **Cross-asset link target resolution**: Agent cross-links (`skillRef`, `guardrailRef`, etc.) populate `AssetLinks.Related` with `{Kind, Name}` but don't verify targets exist. *(M6.3)*
+- [ ] **`catalog-gen build-server --compile` flag**: Server builder generates `main.go` + `go.mod` + `Dockerfile` but does not actually compile the binary. The `--compile` flag is accepted but prints "not yet implemented". Needs `go build` invocation with proper module resolution. *(M9.5)*
+- [ ] **OCI provider support in server builder**: Server builder assumes Go module imports for plugins. Does not support packaging plugins as OCI artifacts or pulling plugin code from OCI registries. *(M9.5)*
+- [ ] **Cosign/Sigstore image signing hooks**: Server builder generates Dockerfiles but has no integration with cosign or Sigstore for signing built images. Hooks are designed in the manifest schema but not implemented. *(M9.5)*
 - [ ] **Wire `VerifyingProvenanceExtractor` as default-on**: The decorator exists and persists integrity fields to DB, but is not wired into the default server pipeline. Callers must explicitly wrap their extractor. Should be activated by default so provenance integrity verification happens automatically for all plugins. *(M7, M7.1)*
 - [ ] **OPA/Rego approval policy adapter**: Current YAML-based policy engine covers basic use cases. Enterprise governance typically requires pluggable policy backends (OPA/Rego) for complex conditional logic, external data sources, and audit-grade policy evaluation. *(M7, Phase 8)*
 - [x] **RBAC layering for governance actions**: SAR-based authorization implemented via `pkg/authz`. Governance endpoints mapped to `approvals` resource with per-verb permissions. `RequirePermission` middleware enforces role-based access when `CATALOG_AUTHZ_MODE=sar`. *(M7, resolved M8.3)*
@@ -47,6 +50,7 @@ Aggregated from all Phase 1–7 implementation reports. Organized by category wi
 
 ## UI Frontend
 
+- [ ] **Frontend consumption of extended UI hints (Phase 9)**: Phase 9 formalized 11 `FieldDisplayType` values (text, markdown, badge, tags, link, repoRef, imageRef, dateTime, code, json, secretRef) and added `ListViewHints`, `DetailViewHints`, `SearchHints`, and `ActionDisplayHints` to `EntityUIHints`. The backend serves these in the capabilities document, but the React frontend (`GenericListView`, `GenericDetailView`, etc.) does not yet read or render based on the extended hints. Until consumed, richer layouts (e.g., markdown rendering, badge styling, faceted search) are not realized. *(M9.2, M9.7)*
 - [ ] **GenericActionDialog tags input UX**: Currently a simple comma-separated `TextInput`. A proper `LabelGroup` chip input would improve UX. *(M5.5)*
 - [ ] **YAML syntax validation**: No frontend validation of YAML content before save on the Manage Source page. *(M3.4)*
 - [ ] **Save confirmation dialog**: No confirmation before overwriting server-side YAML file. *(M3.4)*
@@ -74,6 +78,9 @@ Aggregated from all Phase 1–7 implementation reports. Organized by category wi
 
 ## Testing
 
+- [ ] **Conformance harness CI integration**: The importable conformance harness (`pkg/catalog/conformance/`) requires a live catalog-server with fixtures loaded to fully execute. CI needs a job that boots the server (e.g., Docker Compose), loads fixture data, and runs the harness. Currently only compile-time tests pass in CI; the 6 runtime categories (A-F) are not exercised. *(M9.3, M9.7)*
+- [ ] **Governance checks CI enforcement**: `catalog-gen validate --governance` can verify all 8 plugins pass governance checks, but this is not wired into CI as a gate. PRs that break governance (e.g., removing plugin.yaml, dropping license) are not caught automatically. *(M9.6)*
+- [ ] **Plugin index schema validation in CI**: `deploy/plugin-index/schema.yaml` defines a JSON Schema for index entries, but no CI step validates that all entries in `deploy/plugin-index/plugins/*.yaml` conform to the schema. *(M9.6)*
 - [ ] **BFF handler unit tests**: Currently only compile-verified. Need mock HTTP client tests for isolation. *(M2.4, M4.5)*
 - [ ] **Playwright/Cypress automated UI test suite**: Tests defined but require full stack for execution. *(M2.4, M4.5)*
 - [ ] **Test coverage enforcement in CI**: `go test -cover` available but not enforced. *(M4.5)*
@@ -87,6 +94,7 @@ Aggregated from all Phase 1–7 implementation reports. Organized by category wi
 - [ ] **Automated doc link-checking**: No harness to verify code snippets in docs stay in sync with source. *(M1.M5)*
 - [ ] **React component example in UI/CLI guide**: Conceptual extension points described but no working React component example. *(M1.M5)*
 - [ ] **`catalog-gen` error messages and troubleshooting guide**: Common failures (missing `catalog.yaml`, invalid types) not documented. *(M1.M5)*
+- [ ] **catalog-gen generated docs review**: `gen_docs.go` generates a documentation kit (README, provider guide, schema guide, testing guide, publishing guide), but the generated content uses template placeholders. A review pass should ensure the generated docs are accurate for real-world plugin development. *(M9.4)*
 
 ## Observability & Telemetry
 
@@ -130,7 +138,10 @@ Aggregated from all Phase 1–7 implementation reports. Organized by category wi
 - [ ] **Registry/deployment integration bridge**: Connect catalog governance (lifecycle states, promotion bindings) to actual deployment systems (Model Registry, K8s, serving infrastructure). Currently governance is catalog-layer only. *(Phase 8)*
 - [ ] **External ecosystem alignment**: Integrate with external AI asset standards and registries (MLflow, OCI artifacts, SLSA/in-toto supply chain metadata, Sigstore signing). *(Phase 8)*
 - [ ] **Provenance signing with Sigstore/cosign**: `VerifyingProvenanceExtractor` uses content hashing. Production supply chain security requires cryptographic signing (cosign, in-toto attestations). *(Phase 8)*
+- [ ] **Server builder OCI artifact distribution**: Compose custom catalog-servers and distribute as OCI artifacts. Currently only generates source code. *(M9.5)*
+- [ ] **Plugin hot-reload from index**: Server builder generates static binaries. Dynamic plugin loading from the index at runtime (without recompilation) is not supported. *(M9.5, M9.6)*
+- [ ] **Community plugin contribution workflow**: Plugin index has 3 tiers (built-in, supported, community) but no documented contribution process, review checklist, or automated PR template for community plugin submissions. *(M9.6)*
 
 ---
 
-*Last updated: 2026-02-18. Generated from implementation reports M1.1–M1.6, M2.1–M2.6, M3.1–M3.4, M4.1–M4.6, M5.1–M5.9, M6.1–M6.6, M7, M7.1, M8.1–M8.10.*
+*Last updated: 2026-02-17. Generated from implementation reports M1.1–M1.6, M2.1–M2.6, M3.1–M3.4, M4.1–M4.6, M5.1–M5.9, M6.1–M6.6, M7, M7.1, M8.1–M8.10, M9.1–M9.7.*

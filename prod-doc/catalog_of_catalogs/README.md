@@ -12,6 +12,10 @@ The catalog-of-catalogs extends the Kubeflow Model Registry with a **universal a
 - **Universal Asset Framework** - Capabilities-driven discovery, asset mapping, and action execution
 - **Generic Clients** - React UI and CLI that render any plugin from its capabilities document
 - **Conformance Suite** - Ensures all plugins meet the universal framework contract
+- **Plugin Ecosystem Tooling** - catalog-gen scaffolding, plugin.yaml governance metadata, server builder
+- **UI Hints Schema** - Formalized field display types for rich plugin rendering (11 display types)
+- **Importable Conformance Harness** - Reusable library with 6 test categories (A-F) and JSON reports
+- **Governance Program** - Machine-checkable quality gates and supported plugin index
 - **Multi-Tenancy** - Namespace-based tenant isolation with server-side enforcement
 - **Enterprise Authorization** - Kubernetes SAR-based RBAC with identity extraction and caching
 - **Audit Logging** - Structured audit events for all management actions with retention
@@ -75,7 +79,8 @@ prod-doc/catalog_of_catalogs/
 │   ├── README.md
 │   ├── architecture.md                  # Core interfaces, registry, server lifecycle
 │   ├── creating-plugins.md              # Step-by-step plugin creation guide
-│   └── configuration.md                 # sources.yaml, env vars, CLI flags
+│   ├── configuration.md                 # sources.yaml, env vars, CLI flags
+│   └── catalog-gen.md                   # catalog-gen tool: scaffold, validate, build-server
 │
 ├── source-management/                   # Source CRUD, persistence, validation
 │   ├── README.md
@@ -99,7 +104,8 @@ prod-doc/catalog_of_catalogs/
 │   ├── deployment.md                    # Docker, Kubernetes, health probes, HA
 │   ├── security.md                      # RBAC, JWT, SecretRef, authz, audit
 │   ├── enterprise-ops-runbook.md        # Day-0/1 ops, troubleshooting, backup
-│   └── upgrade-guide.md                 # Phase 8 upgrade and migration guide
+│   ├── upgrade-guide.md                 # Phase 8 upgrade and migration guide
+│   └── governance.md                    # Plugin governance checks and supported index
 │
 └── clients/                             # Client surfaces
     ├── README.md
@@ -114,6 +120,7 @@ prod-doc/catalog_of_catalogs/
 |------|-------|
 | Understand the plugin architecture | [Plugin Framework Architecture](./plugin-framework/architecture.md) |
 | Create a new asset-type plugin | [Creating Plugins](./plugin-framework/creating-plugins.md) |
+| Scaffold a plugin with catalog-gen | [catalog-gen Tool](./plugin-framework/catalog-gen.md) |
 | Configure catalog sources | [Configuration](./plugin-framework/configuration.md) |
 | Manage sources at runtime | [Source Management](./source-management/README.md) |
 | Understand capabilities discovery | [Capabilities Discovery](./universal-assets/capabilities-discovery.md) |
@@ -125,8 +132,10 @@ prod-doc/catalog_of_catalogs/
 | HA deployment | [Deployment: HA](./operations/deployment.md#ha-deployment-phase-8) |
 | Operate in production | [Enterprise Ops Runbook](./operations/enterprise-ops-runbook.md) |
 | Upgrade to Phase 8 | [Upgrade Guide](./operations/upgrade-guide.md) |
+| Check plugin governance | [Governance](./operations/governance.md) |
 | Build UI integrations | [Generic UI](./clients/generic-ui.md) |
 | Run conformance tests | [catalogctl and Conformance](./clients/catalogctl-and-conformance.md) |
+| Use importable conformance harness | [Conformance Harness](./clients/catalogctl-and-conformance.md#importable-conformance-harness-phase-9) |
 
 ## API Surface
 
@@ -183,6 +192,14 @@ prod-doc/catalog_of_catalogs/
 | `cmd/catalogctl/main.go` | CLI entry point |
 | `catalog/config/sources.yaml` | Default source configuration |
 | `tests/conformance/` | Conformance test suite |
+| `pkg/catalog/plugin/plugin_metadata.go` | plugin.yaml types, load, validate, semver (Phase 9) |
+| `pkg/catalog/plugin/ui_hints_types.go` | Formalized UI hints schema: 11 display types (Phase 9) |
+| `pkg/catalog/plugin/ui_hints_validator.go` | UI hints validation (Phase 9) |
+| `pkg/catalog/plugin/governance_checks.go` | 7 governance checks for plugin quality (Phase 9) |
+| `pkg/catalog/conformance/` | Importable conformance harness with 6 categories (Phase 9) |
+| `cmd/catalog-gen/` | Plugin scaffolding, validation, server builder CLI (Phase 9) |
+| `deploy/plugin-index/` | Supported plugin index with 8 entries (Phase 9) |
+| `catalog/plugins/*/plugin.yaml` | Distribution metadata for all 8 plugins (Phase 9) |
 | `pkg/tenancy/` | Multi-tenant context, middleware, resolvers (Phase 8) |
 | `pkg/authz/` | Authorization: SAR, identity, caching, mapper (Phase 8) |
 | `pkg/audit/` | Audit logging: middleware, handlers, retention (Phase 8) |

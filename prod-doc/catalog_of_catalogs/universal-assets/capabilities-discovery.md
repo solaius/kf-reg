@@ -217,14 +217,19 @@ type V2FieldHint struct {
 
 ### EntityUIHints
 
-Optional visual rendering hints for a specific entity kind.
+Optional visual rendering hints for a specific entity kind. Phase 9 extends this type with structured display hints for list views, detail views, search, and actions.
 
 ```go
 type EntityUIHints struct {
-    Icon           string   `json:"icon,omitempty"`
-    Color          string   `json:"color,omitempty"`
-    NameField      string   `json:"nameField,omitempty"`      // field to use as display name
-    DetailSections []string `json:"detailSections,omitempty"` // ordered section names
+    Icon           string              `json:"icon,omitempty"`
+    Color          string              `json:"color,omitempty"`
+    NameField      string              `json:"nameField,omitempty"`
+    DetailSections []string            `json:"detailSections,omitempty"`
+    // Phase 9 extensions (all optional for backward compatibility)
+    ListView       *ListViewHints      `json:"listView,omitempty"`
+    DetailView     *DetailViewHints    `json:"detailView,omitempty"`
+    Search         *SearchHints        `json:"search,omitempty"`
+    ActionHints    *ActionDisplayHints `json:"actionHints,omitempty"`
 }
 ```
 
@@ -234,6 +239,30 @@ type EntityUIHints struct {
 | `color` | string | Accent color for cards and badges. |
 | `nameField` | string | JSON path to the field used as the primary display name (default: `"name"`). |
 | `detailSections` | []string | Ordered list of section names. Detail fields are grouped and ordered by this list. |
+| `listView` | *ListViewHints | Column display preferences, default sort, compact mode (Phase 9). |
+| `detailView` | *DetailViewHints | Section layout, field display types, collapsible sections (Phase 9). |
+| `search` | *SearchHints | Facet definitions, default filters, quick search config (Phase 9). |
+| `actionHints` | *ActionDisplayHints | Confirmation dialogs, button styles, grouped actions (Phase 9). |
+
+### Field Display Types (Phase 9)
+
+The `FieldDisplayType` enum defines how individual fields should be rendered. Used by `ListViewHints` and `DetailViewHints` to specify per-field rendering:
+
+| Type | Description |
+|------|-------------|
+| `text` | Plain text (default) |
+| `markdown` | Rendered markdown content |
+| `badge` | Colored badge/chip (e.g., status indicators) |
+| `tags` | Tag/label collection |
+| `link` | Clickable URL |
+| `repoRef` | Repository reference with icon |
+| `imageRef` | Container image reference |
+| `dateTime` | Formatted date/time |
+| `code` | Monospace code block |
+| `json` | JSON viewer |
+| `secretRef` | Masked secret reference (never displays raw values) |
+
+Validated by `ValidateUIHints(hints *EntityUIHints)` in `pkg/catalog/plugin/ui_hints_validator.go`.
 
 ### SourceCapabilities
 

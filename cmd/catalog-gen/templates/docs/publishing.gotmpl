@@ -1,0 +1,47 @@
+# Publishing: {{.DisplayName}}
+
+## Versioning
+
+This plugin uses semantic versioning. The current version is declared in `plugin.yaml`.
+
+### Bumping Versions
+
+```bash
+# Patch release (bug fixes)
+catalog-gen bump-version patch    # e.g., 0.1.0 -> 0.1.1
+
+# Minor release (new features, backward compatible)
+catalog-gen bump-version minor    # e.g., 0.1.0 -> 0.2.0
+
+# Major release (breaking changes)
+catalog-gen bump-version major    # e.g., 0.1.0 -> 1.0.0
+```
+
+## Compatibility
+
+The `plugin.yaml` declares compatibility constraints:
+
+```yaml
+compatibility:
+  catalogServer:
+    minVersion: "0.9.0"   # Minimum server version
+    maxVersion: "1.x"     # Maximum server version (wildcard OK)
+  frameworkApi: v1alpha1   # Framework API level
+```
+
+### Validation
+
+Run `catalog-gen validate` before publishing to check:
+- All required fields present
+- Version is valid semver
+- Compatibility constraints are consistent
+- Conformance tests exist
+
+## Release Checklist
+
+1. Run full test suite: `go test ./... -count=1`
+2. Run conformance: `CATALOG_SERVER_URL=... go test ./tests/conformance/ -v`
+3. Validate plugin: `catalog-gen validate`
+4. Bump version: `catalog-gen bump-version <part>`
+5. Commit and tag: `git tag {{.Name}}/v$(yq .spec.version plugin.yaml)`
+6. Push: `git push origin --tags`
