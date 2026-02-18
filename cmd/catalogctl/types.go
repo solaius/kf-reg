@@ -35,14 +35,42 @@ type pluginMeta struct {
 
 // entityCaps describes one entity kind that a plugin manages.
 type entityCaps struct {
-	Kind        string          `json:"kind"`
-	Plural      string          `json:"plural"`
-	DisplayName string          `json:"displayName"`
-	Description string          `json:"description,omitempty"`
-	Endpoints   entityEndpoints `json:"endpoints"`
-	Fields      entityFields    `json:"fields"`
-	UIHints     *entityUIHints  `json:"uiHints,omitempty"`
-	Actions     []string        `json:"actions,omitempty"`
+	Kind        string             `json:"kind"`
+	Plural      string             `json:"plural"`
+	DisplayName string             `json:"displayName"`
+	Description string             `json:"description,omitempty"`
+	Endpoints   entityEndpoints    `json:"endpoints"`
+	Fields      entityFields       `json:"fields"`
+	UIHints     *entityUIHints     `json:"uiHints,omitempty"`
+	Actions     []string           `json:"actions,omitempty"`
+	Governance  *governanceCaps    `json:"governance,omitempty"`
+}
+
+// governanceCaps describes the governance capabilities for an entity type.
+type governanceCaps struct {
+	Supported  bool                `json:"supported"`
+	Lifecycle  *lifecycleCaps      `json:"lifecycle,omitempty"`
+	Versioning *versioningCaps     `json:"versioning,omitempty"`
+	Approvals  *approvalsCaps      `json:"approvals,omitempty"`
+	Provenance *provenanceCaps     `json:"provenance,omitempty"`
+}
+
+type lifecycleCaps struct {
+	States       []string `json:"states"`
+	DefaultState string   `json:"defaultState"`
+}
+
+type versioningCaps struct {
+	Enabled      bool     `json:"enabled"`
+	Environments []string `json:"environments"`
+}
+
+type approvalsCaps struct {
+	Enabled bool `json:"enabled"`
+}
+
+type provenanceCaps struct {
+	Enabled bool `json:"enabled"`
 }
 
 // entityEndpoints lists the REST paths for an entity kind.

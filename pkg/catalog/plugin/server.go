@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -13,6 +14,8 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"gorm.io/gorm"
+
+	"github.com/kubeflow/model-registry/pkg/catalog/governance"
 )
 
 // failedPlugin records a plugin that failed during initialization.
@@ -35,10 +38,13 @@ type Server struct {
 	configVersion   string // hash from last ConfigStore.Load
 	rateLimiter     *RefreshRateLimiter
 	secretResolver  SecretResolver
-	overlayStore    *OverlayStore
-	startedAt       time.Time
-	initialLoadDone bool
-	mu              sync.RWMutex
+	overlayStore     *OverlayStore
+	governanceStore  *governance.GovernanceStore
+	auditStore       *governance.AuditStore
+	governanceConfig *governance.GovernanceConfig
+	startedAt        time.Time
+	initialLoadDone  bool
+	mu               sync.RWMutex
 }
 
 // ServerOption configures a Server.
@@ -66,6 +72,13 @@ func WithConfigStore(store ConfigStore) ServerOption {
 func WithSecretResolver(resolver SecretResolver) ServerOption {
 	return func(s *Server) {
 		s.secretResolver = resolver
+	}
+}
+
+// WithGovernanceConfig sets the governance configuration for the server.
+func WithGovernanceConfig(cfg *governance.GovernanceConfig) ServerOption {
+	return func(s *Server) {
+		s.governanceConfig = cfg
 	}
 }
 
@@ -123,6 +136,23 @@ func (s *Server) Init(ctx context.Context) error {
 		s.overlayStore = NewOverlayStore(s.db)
 		if err := s.overlayStore.AutoMigrate(); err != nil {
 			s.logger.Error("failed to auto-migrate overlay store table", "error", err)
+		}
+
+		// Auto-migrate governance tables.
+		s.governanceStore = governance.NewGovernanceStore(s.db)
+		s.auditStore = governance.NewAuditStore(s.db)
+		if err := s.governanceStore.AutoMigrate(); err != nil {
+			s.logger.Error("failed to auto-migrate governance tables", "error", err)
+		}
+
+		// Auto-migrate version and binding tables.
+		vStore := governance.NewVersionStore(s.db)
+		if err := vStore.AutoMigrate(); err != nil {
+			s.logger.Error("failed to auto-migrate version tables", "error", err)
+		}
+		bStore := governance.NewBindingStore(s.db)
+		if err := bStore.AutoMigrate(); err != nil {
+			s.logger.Error("failed to auto-migrate binding tables", "error", err)
 		}
 	}
 
@@ -238,6 +268,46 @@ func (s *Server) MountRoutes() chi.Router {
 	// Add plugin info endpoint
 	s.router.Get("/api/plugins", s.pluginsHandler)
 	s.router.Get("/api/plugins/{pluginName}/capabilities", s.capabilitiesHandler)
+
+	// Mount governance routes.
+	if s.governanceStore != nil {
+		var approvalStore *governance.ApprovalStore
+		var evaluator *governance.ApprovalEvaluator
+		var versionStore *governance.VersionStore
+		var bindingStore *governance.BindingStore
+
+		if s.db != nil {
+			approvalStore = governance.NewApprovalStore(s.db)
+			if err := approvalStore.AutoMigrate(); err != nil {
+				s.logger.Error("failed to auto-migrate approval tables", "error", err)
+			}
+			versionStore = governance.NewVersionStore(s.db)
+			bindingStore = governance.NewBindingStore(s.db)
+		}
+
+		// Load approval policies from YAML file.
+		approvalPoliciesPath := os.Getenv("CATALOG_APPROVAL_POLICIES")
+		if approvalPoliciesPath == "" {
+			approvalPoliciesPath = "/config/approval-policies.yaml"
+		}
+		var err error
+		evaluator, err = governance.LoadApprovalPolicies(approvalPoliciesPath)
+		if err != nil {
+			s.logger.Warn("failed to load approval policies, using empty defaults",
+				"path", approvalPoliciesPath, "error", err)
+			evaluator = governance.NewApprovalEvaluator(nil)
+		}
+
+		govRouter := governance.NewRouterFull(
+			s.governanceStore, s.auditStore, approvalStore, evaluator,
+			versionStore, bindingStore,
+		)
+		s.router.Mount("/api/governance/v1alpha1", govRouter)
+		s.logger.Info("mounted governance routes",
+			"approvals", approvalStore != nil,
+			"versioning", versionStore != nil,
+		)
+	}
 
 	return s.router
 }
@@ -422,6 +492,21 @@ func (s *Server) GetOverlayStore() *OverlayStore {
 	return s.overlayStore
 }
 
+// GetGovernanceStore returns the server's GovernanceStore, or nil if no DB is configured.
+func (s *Server) GetGovernanceStore() *governance.GovernanceStore {
+	return s.governanceStore
+}
+
+// GetAuditStore returns the server's AuditStore, or nil if no DB is configured.
+func (s *Server) GetAuditStore() *governance.AuditStore {
+	return s.auditStore
+}
+
+// GetGovernanceConfig returns the server's governance configuration.
+func (s *Server) GetGovernanceConfig() *governance.GovernanceConfig {
+	return s.governanceConfig
+}
+
 // persistConfig saves the current in-memory config to the ConfigStore using
 // optimistic concurrency. It updates the in-memory configVersion on success.
 // Returns the new version on success, or an error (including ErrVersionConflict).
@@ -589,6 +674,36 @@ func (s *Server) reconcileOnce(ctx context.Context) {
 		s.logger.Info("reconcile: re-initializing plugin", "plugin", p.Name())
 		if err := p.Init(ctx, pluginCfg); err != nil {
 			s.logger.Error("reconcile: plugin re-init failed", "plugin", p.Name(), "error", err)
+		}
+	}
+}
+
+// AuditCleanupLoop periodically deletes audit events older than the configured
+// retention period. It runs daily until the context is cancelled.
+func (s *Server) AuditCleanupLoop(ctx context.Context) {
+	if s.auditStore == nil || s.governanceConfig == nil || s.governanceConfig.AuditRetention.Days <= 0 {
+		s.logger.Info("audit cleanup loop disabled")
+		return
+	}
+
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+
+	s.logger.Info("audit cleanup loop started", "retentionDays", s.governanceConfig.AuditRetention.Days)
+
+	for {
+		select {
+		case <-ctx.Done():
+			s.logger.Info("audit cleanup loop stopped")
+			return
+		case <-ticker.C:
+			cutoff := time.Now().AddDate(0, 0, -s.governanceConfig.AuditRetention.Days)
+			deleted, err := s.auditStore.DeleteOlderThan(cutoff)
+			if err != nil {
+				s.logger.Error("audit cleanup failed", "error", err)
+			} else if deleted > 0 {
+				s.logger.Info("audit cleanup completed", "deleted", deleted, "cutoff", cutoff.Format(time.RFC3339))
+			}
 		}
 	}
 }

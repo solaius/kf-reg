@@ -1070,3 +1070,89 @@ func (m *ModelCatalogClientMock) PostCatalogSourceAction(_ httpclient.HTTPClient
 
 	return json.RawMessage(data), nil
 }
+
+// CatalogGovernanceInterface mock implementations.
+
+func (m *ModelCatalogClientMock) GetGovernance(_ httpclient.HTTPClientInterface, plugin, kind, name string) (json.RawMessage, error) {
+	result := map[string]interface{}{
+		"assetRef":   map[string]string{"plugin": plugin, "kind": kind, "name": name},
+		"governance": map[string]interface{}{"lifecycle": map[string]string{"state": "draft"}},
+	}
+	data, _ := json.Marshal(result)
+	return json.RawMessage(data), nil
+}
+
+func (m *ModelCatalogClientMock) PatchGovernance(_ httpclient.HTTPClientInterface, plugin, kind, name string, _ io.Reader) (json.RawMessage, error) {
+	result := map[string]interface{}{
+		"assetRef":   map[string]string{"plugin": plugin, "kind": kind, "name": name},
+		"governance": map[string]interface{}{"lifecycle": map[string]string{"state": "draft"}},
+	}
+	data, _ := json.Marshal(result)
+	return json.RawMessage(data), nil
+}
+
+func (m *ModelCatalogClientMock) GetGovernanceHistory(_ httpclient.HTTPClientInterface, _, _, _ string, _ url.Values) (json.RawMessage, error) {
+	result := map[string]interface{}{"events": []interface{}{}, "totalSize": 0}
+	data, _ := json.Marshal(result)
+	return json.RawMessage(data), nil
+}
+
+func (m *ModelCatalogClientMock) PostGovernanceAction(_ httpclient.HTTPClientInterface, _, _, _, _ string, _ io.Reader) (json.RawMessage, error) {
+	result := map[string]interface{}{"action": "lifecycle.setState", "status": "completed"}
+	data, _ := json.Marshal(result)
+	return json.RawMessage(data), nil
+}
+
+func (m *ModelCatalogClientMock) ListVersions(_ httpclient.HTTPClientInterface, _, _, _ string, _ url.Values) (json.RawMessage, error) {
+	result := map[string]interface{}{"versions": []interface{}{}, "totalSize": 0}
+	data, _ := json.Marshal(result)
+	return json.RawMessage(data), nil
+}
+
+func (m *ModelCatalogClientMock) CreateVersion(_ httpclient.HTTPClientInterface, _, _, _ string, _ io.Reader) (json.RawMessage, error) {
+	result := map[string]interface{}{"versionId": "v1.0:mock", "versionLabel": "v1.0"}
+	data, _ := json.Marshal(result)
+	return json.RawMessage(data), nil
+}
+
+func (m *ModelCatalogClientMock) ListBindings(_ httpclient.HTTPClientInterface, _, _, _ string) (json.RawMessage, error) {
+	result := map[string]interface{}{"bindings": []interface{}{}}
+	data, _ := json.Marshal(result)
+	return json.RawMessage(data), nil
+}
+
+func (m *ModelCatalogClientMock) SetBinding(_ httpclient.HTTPClientInterface, _, _, _, _ string, _ io.Reader) (json.RawMessage, error) {
+	result := map[string]interface{}{"environment": "dev", "versionId": "v1.0:mock"}
+	data, _ := json.Marshal(result)
+	return json.RawMessage(data), nil
+}
+
+func (m *ModelCatalogClientMock) ListApprovals(_ httpclient.HTTPClientInterface, _ url.Values) (json.RawMessage, error) {
+	result := map[string]interface{}{"requests": []interface{}{}, "totalSize": 0}
+	data, _ := json.Marshal(result)
+	return json.RawMessage(data), nil
+}
+
+func (m *ModelCatalogClientMock) GetApproval(_ httpclient.HTTPClientInterface, id string) (json.RawMessage, error) {
+	result := map[string]interface{}{"id": id, "status": "pending"}
+	data, _ := json.Marshal(result)
+	return json.RawMessage(data), nil
+}
+
+func (m *ModelCatalogClientMock) PostApprovalDecision(_ httpclient.HTTPClientInterface, _ string, _ io.Reader) (json.RawMessage, error) {
+	result := map[string]interface{}{"decision": "approved", "status": "pending"}
+	data, _ := json.Marshal(result)
+	return json.RawMessage(data), nil
+}
+
+func (m *ModelCatalogClientMock) CancelApproval(_ httpclient.HTTPClientInterface, id string, _ io.Reader) (json.RawMessage, error) {
+	result := map[string]interface{}{"status": "canceled", "requestId": id}
+	data, _ := json.Marshal(result)
+	return json.RawMessage(data), nil
+}
+
+func (m *ModelCatalogClientMock) ListPolicies(_ httpclient.HTTPClientInterface) (json.RawMessage, error) {
+	result := map[string]interface{}{"policies": []interface{}{}}
+	data, _ := json.Marshal(result)
+	return json.RawMessage(data), nil
+}

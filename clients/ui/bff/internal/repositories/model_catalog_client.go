@@ -12,6 +12,7 @@ type ModelCatalogClientInterface interface {
 	CatalogManagementInterface
 	McpCatalogInterface
 	CatalogEntitiesInterface
+	CatalogGovernanceInterface
 }
 
 type ModelCatalogClient struct {
@@ -23,6 +24,7 @@ type ModelCatalogClient struct {
 	CatalogManagement
 	McpCatalog
 	CatalogEntities
+	CatalogGovernance
 }
 
 func NewModelCatalogClient(logger *slog.Logger) (ModelCatalogClientInterface, error) {

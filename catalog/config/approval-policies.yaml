@@ -1,0 +1,53 @@
+policies:
+  - id: high-risk-approval
+    displayName: High Risk Approval
+    description: Require approval for lifecycle transitions on high/critical risk assets
+    enabled: true
+    selector:
+      riskLevels:
+        - high
+        - critical
+      transitions:
+        - from: draft
+          to: approved
+        - from: approved
+          to: archived
+        - from: deprecated
+          to: archived
+    gate:
+      requiredCount: 2
+      allowedRoles:
+        - admin
+        - governance-reviewer
+      denyOnFirst: false
+    expiryHours: 168
+
+  - id: production-promotion
+    displayName: Production Promotion Gate
+    description: Require approval when promoting assets to approved state
+    enabled: true
+    selector:
+      transitions:
+        - from: draft
+          to: approved
+    gate:
+      requiredCount: 1
+      allowedRoles:
+        - admin
+        - reviewer
+        - tech-lead
+      denyOnFirst: true
+    expiryHours: 72
+
+  - id: archive-gate
+    displayName: Archive Gate
+    description: Require approval before archiving any asset
+    enabled: false
+    selector:
+      transitions:
+        - from: "*"
+          to: archived
+    gate:
+      requiredCount: 1
+      denyOnFirst: false
+    expiryHours: 48

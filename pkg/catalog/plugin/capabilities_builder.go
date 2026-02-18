@@ -1,14 +1,20 @@
 package plugin
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/kubeflow/model-registry/pkg/catalog/governance"
+)
 
 // BuildCapabilitiesV2 assembles PluginCapabilitiesV2 from a plugin by checking
 // which optional interfaces it implements. If the plugin implements
 // CapabilitiesV2Provider directly, that result is returned as-is.
 func BuildCapabilitiesV2(p CatalogPlugin, basePath string) PluginCapabilitiesV2 {
-	// If the plugin provides V2 directly, use that.
+	// If the plugin provides V2 directly, start with that.
 	if v2p, ok := p.(CapabilitiesV2Provider); ok {
-		return v2p.GetCapabilitiesV2()
+		caps := v2p.GetCapabilitiesV2()
+		applyGovernanceCaps(&caps)
+		return caps
 	}
 
 	caps := PluginCapabilitiesV2{
@@ -50,7 +56,33 @@ func BuildCapabilitiesV2(p CatalogPlugin, basePath string) PluginCapabilitiesV2 
 		}
 	}
 
+	applyGovernanceCaps(&caps)
+
 	return caps
+}
+
+// applyGovernanceCaps adds governance capabilities to all entities in a PluginCapabilitiesV2.
+func applyGovernanceCaps(caps *PluginCapabilitiesV2) {
+	govCaps := &governance.GovernanceCapabilities{
+		Supported: true,
+		Lifecycle: &governance.LifecycleCapabilities{
+			States:       []string{"draft", "approved", "deprecated", "archived"},
+			DefaultState: "draft",
+		},
+		Versioning: &governance.VersionCapabilities{
+			Enabled:      true,
+			Environments: []string{"dev", "stage", "prod"},
+		},
+		Approvals: &governance.ApprovalCapabilities{
+			Enabled: true,
+		},
+		Provenance: &governance.ProvenanceCapabilities{
+			Enabled: true,
+		},
+	}
+	for i := range caps.Entities {
+		caps.Entities[i].Governance = govCaps
+	}
 }
 
 // pluralize returns a simple lowercase plural form of a kind name.

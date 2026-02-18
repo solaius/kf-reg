@@ -61,3 +61,20 @@ func (m *InternalKubernetesClientMock) BearerToken() (string, error) {
 func (kc *InternalKubernetesClientMock) GetGroups(ctx context.Context) ([]string, error) {
 	return []string{"dora-group-mock", "bella-group-mock"}, nil
 }
+
+// CanListServicesInNamespace bypasses SubjectAccessReview for the fake clientset.
+// The fake.NewSimpleClientset() doesn't evaluate RBAC rules, so SAR always
+// returns "not allowed". In mock mode we grant full access.
+func (m *InternalKubernetesClientMock) CanListServicesInNamespace(_ context.Context, _ *k8s.RequestIdentity, _ string) (bool, error) {
+	return true, nil
+}
+
+// CanAccessServiceInNamespace bypasses SAR for the fake clientset.
+func (m *InternalKubernetesClientMock) CanAccessServiceInNamespace(_ context.Context, _ *k8s.RequestIdentity, _, _ string) (bool, error) {
+	return true, nil
+}
+
+// GetSelfSubjectRulesReview returns all service names for the fake clientset.
+func (m *InternalKubernetesClientMock) GetSelfSubjectRulesReview(_ context.Context, _ *k8s.RequestIdentity, _ string) ([]string, error) {
+	return []string{}, nil
+}

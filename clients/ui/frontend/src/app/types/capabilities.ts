@@ -1,3 +1,5 @@
+import { GovernanceCapabilities } from '~/app/types/governance';
+
 /** V2 Capabilities types mirroring the catalog server schema. */
 
 export type V2ColumnHint = {
@@ -66,6 +68,7 @@ export type EntityCapabilities = {
     detailSections?: string[];
   };
   actions?: string[];
+  governance?: GovernanceCapabilities;
 };
 
 export type PluginInfo = {

@@ -1,6 +1,6 @@
 # Catalog of Catalogs — Open Items & TODOs
 
-Aggregated from all Phase 1–6 implementation reports. Organized by category with source milestone references.
+Aggregated from all Phase 1–7 implementation reports. Organized by category with source milestone references.
 
 ---
 
@@ -9,7 +9,7 @@ Aggregated from all Phase 1–6 implementation reports. Organized by category wi
 - [x] **Production authentication/authorization**: JWT-based `RoleExtractor` implemented in `jwt_role_extractor.go`. Supports RS256 verification, nested claim paths (Keycloak `realm_access.roles`), and trusted-proxy mode. Wired in `main.go` via `CATALOG_AUTH_MODE=jwt`. `X-User-Role` header remains available for dev. *(M2.1, M5.9 — resolved in M5.9 gate fixes)*
 - [x] **FilterQuery injection safety**: Client-side `sanitizeFilterValue()` added to escape single quotes in filter values. Server-side parser confirmed safe — uses parameterized queries (`?` placeholders) via GORM. Injection attempt tests added to `parser_test.go` and `query_builder_test.go`. *(M5.9 — resolved in M5.9 gate fixes)*
 - [x] **SecretRef verification**: Comprehensive integration tests added (`TestResolveSecretRefsComprehensive`, `TestIsSecretRefEdgeCases`, `TestSecretRefResolution_E2E_FullFlow`) covering namespace defaulting, missing secrets/keys, multi-property resolution, cross-namespace access. Real-cluster verification steps documented. *(M4.6 — resolved in M5.9 gate fixes)*
-- [ ] **TLS in Docker Compose**: No TLS configuration in `docker-compose.catalog.yaml`. Acceptable for local dev, but production needs TLS termination (ingress or sidecar proxy). *(M3.1)*
+- [ ] **TLS in Docker Compose**: No TLS configuration in `docker-compose.catalog.yaml`. Acceptable for local dev, but production needs TLS termination (ingress or sidecar proxy). Governance endpoints are not hardened beyond existing stack posture. *(M3.1, M7)*
 
 ## API & Backend
 
@@ -37,6 +37,10 @@ Aggregated from all Phase 1–6 implementation reports. Organized by category wi
 - [ ] **OpenAPI spec fetching for `openapi_operation` skills**: Skills with `skillType: openapi_operation` reference external OpenAPI specs but fetching/resolution is deferred. *(M6.5)*
 - [ ] **OCI bundle resolution for Guardrails/Policies `bundleRef`**: Requires OCI provider (deferred to Phase 6.5+). *(M6.4)*
 - [ ] **Cross-asset link target resolution**: Agent cross-links (`skillRef`, `guardrailRef`, etc.) populate `AssetLinks.Related` with `{Kind, Name}` but don't verify targets exist. *(M6.3)*
+- [ ] **Wire `VerifyingProvenanceExtractor` as default-on**: The decorator exists and persists integrity fields to DB, but is not wired into the default server pipeline. Callers must explicitly wrap their extractor. Should be activated by default so provenance integrity verification happens automatically for all plugins. *(M7, M7.1)*
+- [ ] **OPA/Rego approval policy adapter**: Current YAML-based policy engine covers basic use cases. Enterprise governance typically requires pluggable policy backends (OPA/Rego) for complex conditional logic, external data sources, and audit-grade policy evaluation. *(M7, Phase 8)*
+- [ ] **RBAC layering for governance actions**: Governance actions (lifecycle transitions, approval decisions, version creation) use `X-User-Principal` header but lack role-based access control. No enforcement that only designated roles can approve, promote, or archive assets. *(M7, Phase 8)*
+- [ ] **Phase 5 entity action endpoint format**: `TestConformance` action tests (tag/annotate/deprecate) fail across all plugins due to entity action endpoint format mismatch. Pre-existing Phase 5 issue, not caused by Phase 7. *(M5, M7.1)*
 
 ## UI Frontend
 
@@ -113,7 +117,10 @@ Aggregated from all Phase 1–6 implementation reports. Organized by category wi
 - [ ] **Prompt rendering/execution endpoint**: Prompt Templates plugin is discovery-only. Future endpoint for rendering templates with parameters. *(M6.2)*
 - [ ] **Skill execution/invocation endpoint**: Skills plugin is discovery-only. Future endpoint for invoking skills with input. *(M6.5)*
 - [ ] **Agent execution/invocation endpoint**: Agents plugin is discovery-only. Future endpoint for invoking agents. *(M6.3)*
+- [ ] **Registry/deployment integration bridge**: Connect catalog governance (lifecycle states, promotion bindings) to actual deployment systems (Model Registry, K8s, serving infrastructure). Currently governance is catalog-layer only. *(Phase 8)*
+- [ ] **External ecosystem alignment**: Integrate with external AI asset standards and registries (MLflow, OCI artifacts, SLSA/in-toto supply chain metadata, Sigstore signing). *(Phase 8)*
+- [ ] **Provenance signing with Sigstore/cosign**: `VerifyingProvenanceExtractor` uses content hashing. Production supply chain security requires cryptographic signing (cosign, in-toto attestations). *(Phase 8)*
 
 ---
 
-*Last updated: 2026-02-17. Generated from implementation reports M1.1–M1.6, M2.1–M2.6, M3.1–M3.4, M4.1–M4.6, M5.1–M5.9, M6.1–M6.6 (including M6.3.1 git provider wiring).*
+*Last updated: 2026-02-17. Generated from implementation reports M1.1–M1.6, M2.1–M2.6, M3.1–M3.4, M4.1–M4.6, M5.1–M5.9, M6.1–M6.6, M7, M7.1.*

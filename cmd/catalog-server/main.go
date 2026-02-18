@@ -21,6 +21,7 @@ import (
 	"github.com/kubeflow/model-registry/internal/datastore"
 	"github.com/kubeflow/model-registry/internal/datastore/embedmd"
 	"github.com/kubeflow/model-registry/internal/db"
+	"github.com/kubeflow/model-registry/pkg/catalog/governance"
 	"github.com/kubeflow/model-registry/pkg/catalog/plugin"
 
 	// Import plugins - their init() registers them
@@ -173,6 +174,15 @@ func main() {
 		glog.Fatalf("Unknown auth mode: %q (expected jwt, header, or empty)", authMode)
 	}
 
+	// Load governance config if available.
+	govConfigPath := envOrDefault("CATALOG_GOVERNANCE_CONFIG", "/config/governance.yaml")
+	govConfig, err := governance.LoadGovernanceConfig(govConfigPath)
+	if err != nil {
+		logger.Warn("failed to load governance config, using defaults", "path", govConfigPath, "error", err)
+		govConfig = governance.DefaultGovernanceConfig()
+	}
+	serverOpts = append(serverOpts, plugin.WithGovernanceConfig(govConfig))
+
 	// Create and initialize server
 	server := plugin.NewServer(cfg, []string{sourcesPath}, gormDB, logger, serverOpts...)
 	if err := server.Init(ctx); err != nil {
@@ -188,6 +198,9 @@ func main() {
 
 	// Start config reconcile loop in background.
 	go server.ReconcileLoop(ctx)
+
+	// Start audit cleanup loop in background (daily, respects audit retention config).
+	go server.AuditCleanupLoop(ctx)
 
 	logger.Info("catalog server ready",
 		"listen", listenAddr,

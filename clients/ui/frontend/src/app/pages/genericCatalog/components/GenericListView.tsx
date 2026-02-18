@@ -11,6 +11,7 @@ import { Button } from '@patternfly/react-core';
 import { EntityCapabilities } from '~/app/types/capabilities';
 import { GenericEntity } from '~/app/types/asset';
 import { getFieldValue, formatFieldValue } from '~/app/pages/genericCatalog/utils';
+import LifecycleBadge from './LifecycleBadge';
 
 type GenericListViewProps = {
   entity: EntityCapabilities;
@@ -25,6 +26,7 @@ const GenericListView: React.FC<GenericListViewProps> = ({
 }) => {
   const columns = entity.fields.columns;
   const nameField = entity.uiHints?.nameField || 'name';
+  const showLifecycleColumn = entity.governance?.supported === true;
 
   return (
     <Table aria-label={`${entity.displayName} list`} variant="compact">
@@ -35,11 +37,13 @@ const GenericListView: React.FC<GenericListViewProps> = ({
               {col.displayName}
             </Th>
           ))}
+          {showLifecycleColumn && <Th>Lifecycle</Th>}
         </Tr>
       </Thead>
       <Tbody>
         {entities.map((item, rowIndex) => {
           const entityName = String(getFieldValue(item, nameField) || `item-${rowIndex}`);
+          const lifecycleState = getFieldValue(item, 'governance.lifecycle.state') as string | undefined;
           return (
             <Tr key={entityName}>
               {columns.map((col, colIndex) => {
@@ -61,6 +65,11 @@ const GenericListView: React.FC<GenericListViewProps> = ({
                   </Td>
                 );
               })}
+              {showLifecycleColumn && (
+                <Td dataLabel="Lifecycle">
+                  {lifecycleState ? <LifecycleBadge state={lifecycleState} /> : '-'}
+                </Td>
+              )}
             </Tr>
           );
         })}

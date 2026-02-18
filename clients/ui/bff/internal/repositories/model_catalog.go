@@ -42,11 +42,10 @@ func (m *ModelCatalogRepository) ResolveServerAddress(clusterIP string, httpPort
 	}
 	// In federated mode, if external address is available, use it
 	if isFederatedMode && externalAddressRest != "" {
-		// External address is assumed to be HTTPS
-		url := fmt.Sprintf("%s://%s/api/model_catalog/v1alpha1", protocol, externalAddressRest)
+		url := fmt.Sprintf("%s://%s", protocol, externalAddressRest)
 		return url
 	}
 
-	url := fmt.Sprintf("%s://%s:%d/api/model_catalog/v1alpha1", protocol, clusterIP, httpPort)
+	url := fmt.Sprintf("%s://%s:%d", protocol, clusterIP, httpPort)
 	return url
 }

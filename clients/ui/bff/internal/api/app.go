@@ -106,6 +106,26 @@ const (
 	CatalogEntityGetPath    = ApiPathPrefix + "/catalog/:" + CatalogPluginName + "/entities/:" + CatalogEntityPlural + "/:" + CatalogEntityName
 	CatalogEntityActionPath = ApiPathPrefix + "/catalog/:" + CatalogPluginName + "/entities/:" + CatalogEntityPlural + "/:" + CatalogEntityName + "/action"
 	CatalogSourceActionPath = ApiPathPrefix + "/catalog/:" + CatalogPluginName + "/sources/:" + CatalogSourceId + "/action"
+
+	// Governance routes
+	GovernancePluginName  = "gov_plugin"
+	GovernanceKindName    = "gov_kind"
+	GovernanceAssetName   = "gov_asset"
+	GovernanceActionName  = "gov_action"
+	GovernanceEnvName     = "gov_env"
+	GovernanceApprovalId  = "approval_id"
+	GovernancePrefix      = ApiPathPrefix + "/governance"
+	GovernanceAssetPath   = GovernancePrefix + "/assets/:" + GovernancePluginName + "/:" + GovernanceKindName + "/:" + GovernanceAssetName
+	GovernanceHistoryPath = GovernanceAssetPath + "/history"
+	GovernanceActionPath  = GovernanceAssetPath + "/actions/:" + GovernanceActionName
+	GovernanceVersionsPath = GovernanceAssetPath + "/versions"
+	GovernanceBindingsPath = GovernanceAssetPath + "/bindings"
+	GovernanceBindingPath  = GovernanceBindingsPath + "/:" + GovernanceEnvName
+	GovernanceApprovalsPath    = GovernancePrefix + "/approvals"
+	GovernanceApprovalPath     = GovernanceApprovalsPath + "/:" + GovernanceApprovalId
+	GovernanceApprovalDecPath  = GovernanceApprovalPath + "/decisions"
+	GovernanceApprovalCancelPath = GovernanceApprovalPath + "/cancel"
+	GovernancePoliciesPath     = GovernancePrefix + "/policies"
 )
 
 type App struct {
@@ -307,6 +327,21 @@ func (app *App) Routes() http.Handler {
 	apiRouter.GET(CatalogEntityGetPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.GetCatalogEntityHandler)))
 	apiRouter.POST(CatalogEntityActionPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.PostCatalogEntityActionHandler)))
 	apiRouter.POST(CatalogSourceActionPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.PostCatalogSourceActionHandler)))
+
+	// Governance routes (namespace is optional for global governance operations)
+	apiRouter.GET(GovernanceAssetPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.GetGovernanceHandler)))
+	apiRouter.PATCH(GovernanceAssetPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.PatchGovernanceHandler)))
+	apiRouter.GET(GovernanceHistoryPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.GetGovernanceHistoryHandler)))
+	apiRouter.POST(GovernanceActionPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.PostGovernanceActionHandler)))
+	apiRouter.GET(GovernanceVersionsPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.GetGovernanceVersionsHandler)))
+	apiRouter.POST(GovernanceVersionsPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.CreateGovernanceVersionHandler)))
+	apiRouter.GET(GovernanceBindingsPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.GetGovernanceBindingsHandler)))
+	apiRouter.PATCH(GovernanceBindingPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.SetGovernanceBindingHandler)))
+	apiRouter.GET(GovernanceApprovalsPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.GetApprovalsHandler)))
+	apiRouter.GET(GovernanceApprovalPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.GetApprovalHandler)))
+	apiRouter.POST(GovernanceApprovalDecPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.PostApprovalDecisionHandler)))
+	apiRouter.POST(GovernanceApprovalCancelPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.CancelApprovalHandler)))
+	apiRouter.GET(GovernancePoliciesPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.GetPoliciesHandler)))
 
 	// Kubernetes routes
 	apiRouter.GET(UserPath, app.UserHandler)

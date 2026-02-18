@@ -9,7 +9,7 @@ import (
 	"github.com/kubeflow/model-registry/ui/bff/internal/models"
 )
 
-const catalogModelsPath = "/models"
+const catalogModelsPath = "/api/model_catalog/v1alpha1/models"
 
 type CatalogModelsInterface interface {
 	GetAllCatalogModelsAcrossSources(client httpclient.HTTPClientInterface, pageValues url.Values) (*models.CatalogModelList, error)

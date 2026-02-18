@@ -20,7 +20,15 @@ import { BFF_API_VERSION, URL_PREFIX } from '~/app/utilities/const';
 import GenericDetailView from '~/app/pages/genericCatalog/components/GenericDetailView';
 import GenericActionBar from '~/app/pages/genericCatalog/components/GenericActionBar';
 import GenericActionDialog from '~/app/pages/genericCatalog/components/GenericActionDialog';
+import GovernancePanel from '~/app/pages/genericCatalog/components/GovernancePanel';
+import VersionsPanel from '~/app/pages/genericCatalog/components/VersionsPanel';
+import PromotionPanel from '~/app/pages/genericCatalog/components/PromotionPanel';
+import ApprovalsPanel from '~/app/pages/genericCatalog/components/ApprovalsPanel';
+import AuditHistoryPanel from '~/app/pages/genericCatalog/components/AuditHistoryPanel';
+import ProvenancePanel from '~/app/pages/genericCatalog/components/ProvenancePanel';
 import { getFieldValue } from '~/app/pages/genericCatalog/utils';
+import { GovernanceResponse } from '~/app/types/governance';
+import { getGovernance } from '~/app/api/governance/service';
 
 const PluginEntityDetailPage: React.FC = () => {
   const { pluginName = '', entityPlural = '', entityName = '' } = useParams<{
@@ -41,6 +49,9 @@ const PluginEntityDetailPage: React.FC = () => {
   const [error, setError] = React.useState<Error | undefined>();
 
   const [activeAction, setActiveAction] = React.useState<ActionDefinition | undefined>();
+  const [governanceData, setGovernanceData] = React.useState<GovernanceResponse | undefined>();
+
+  const governanceSupported = entityCaps?.governance?.supported === true;
 
   // Fetch entity data
   React.useEffect(() => {
@@ -61,6 +72,23 @@ const PluginEntityDetailPage: React.FC = () => {
         setLoaded(true);
       });
   }, [hostPath, pluginName, entityPlural, entityName]);
+
+  // Fetch governance data when governance is supported
+  React.useEffect(() => {
+    if (!governanceSupported || !pluginName || !entityPlural || !entityName) {
+      return;
+    }
+    // Derive kind from plural (strip trailing 's' as a simple heuristic)
+    const kind = entityCaps?.kind || entityPlural;
+    const govFetcher = getGovernance(pluginName, kind, entityName);
+    govFetcher({})
+      .then((result: GovernanceResponse) => {
+        setGovernanceData(result);
+      })
+      .catch(() => {
+        // Governance fetch failure is non-fatal
+      });
+  }, [governanceSupported, pluginName, entityPlural, entityName, entityCaps?.kind]);
 
   // Resolve available actions for this entity
   const availableActions = React.useMemo(() => {
@@ -131,6 +159,56 @@ const PluginEntityDetailPage: React.FC = () => {
               <GenericDetailView entity={entityCaps} data={data} />
             </PageSection>
           </StackItem>
+          {governanceSupported && governanceData && (
+            <StackItem>
+              <GovernancePanel governance={governanceData.governance} />
+            </StackItem>
+          )}
+          {governanceSupported && entityCaps?.governance?.versioning?.enabled && (
+            <StackItem>
+              <VersionsPanel
+                plugin={pluginName}
+                kind={entityCaps.kind || entityPlural}
+                name={entityName}
+              />
+            </StackItem>
+          )}
+          {governanceSupported && entityCaps?.governance?.versioning?.enabled && (
+            <StackItem>
+              <ProvenancePanel
+                plugin={pluginName}
+                kind={entityCaps.kind || entityPlural}
+                name={entityName}
+              />
+            </StackItem>
+          )}
+          {governanceSupported && entityCaps?.governance?.versioning?.enabled && (
+            <StackItem>
+              <PromotionPanel
+                plugin={pluginName}
+                kind={entityCaps.kind || entityPlural}
+                name={entityName}
+              />
+            </StackItem>
+          )}
+          {governanceSupported && entityCaps?.governance?.approvals?.enabled && (
+            <StackItem>
+              <ApprovalsPanel
+                plugin={pluginName}
+                kind={entityCaps.kind || entityPlural}
+                name={entityName}
+              />
+            </StackItem>
+          )}
+          {governanceSupported && (
+            <StackItem>
+              <AuditHistoryPanel
+                plugin={pluginName}
+                kind={entityCaps.kind || entityPlural}
+                name={entityName}
+              />
+            </StackItem>
+          )}
           {activeAction && (
             <GenericActionDialog
               action={activeAction}

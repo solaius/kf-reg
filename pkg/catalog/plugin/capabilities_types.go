@@ -1,5 +1,7 @@
 package plugin
 
+import "github.com/kubeflow/model-registry/pkg/catalog/governance"
+
 // PluginCapabilitiesV2 is the expanded capabilities discovery document.
 // It provides a complete description of a plugin's entities, endpoints,
 // fields, and actions for generic UI/CLI rendering.
@@ -28,8 +30,9 @@ type EntityCapabilities struct {
 	Description string          `json:"description,omitempty"`
 	Endpoints   EntityEndpoints `json:"endpoints"`
 	Fields      EntityFields    `json:"fields"`
-	UIHints     *EntityUIHints  `json:"uiHints,omitempty"`
-	Actions     []string        `json:"actions,omitempty"` // references ActionDefinition.ID
+	UIHints    *EntityUIHints                    `json:"uiHints,omitempty"`
+	Actions    []string                         `json:"actions,omitempty"`    // references ActionDefinition.ID
+	Governance *governance.GovernanceCapabilities `json:"governance,omitempty"` // governance capabilities for this entity
 }
 
 // EntityEndpoints lists the REST paths for an entity kind.

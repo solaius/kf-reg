@@ -1,0 +1,10 @@
+# Governance configuration
+environments:
+  - dev
+  - stage
+  - prod
+
+trustedSources: []
+
+auditRetention:
+  days: 90
