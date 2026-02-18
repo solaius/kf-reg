@@ -35,16 +35,16 @@ func (h *PromotionActionHandler) SetProvenanceExtractor(e ProvenanceExtractor) {
 
 // HandleAction dispatches promotion actions.
 // Supported: version.create, promotion.bind, promotion.promote, promotion.rollback
-func (h *PromotionActionHandler) HandleAction(ctx context.Context, plugin, kind, name, actor, action string, params map[string]any, dryRun bool) (*ActionResult, error) {
+func (h *PromotionActionHandler) HandleAction(ctx context.Context, namespace, plugin, kind, name, actor, action string, params map[string]any, dryRun bool) (*ActionResult, error) {
 	switch action {
 	case "version.create":
-		return h.handleVersionCreate(ctx, plugin, kind, name, actor, params, dryRun)
+		return h.handleVersionCreate(ctx, namespace, plugin, kind, name, actor, params, dryRun)
 	case "promotion.bind":
-		return h.handleBind(ctx, plugin, kind, name, actor, params, dryRun)
+		return h.handleBind(ctx, namespace, plugin, kind, name, actor, params, dryRun)
 	case "promotion.promote":
-		return h.handlePromote(ctx, plugin, kind, name, actor, params, dryRun)
+		return h.handlePromote(ctx, namespace, plugin, kind, name, actor, params, dryRun)
 	case "promotion.rollback":
-		return h.handleRollback(ctx, plugin, kind, name, actor, params, dryRun)
+		return h.handleRollback(ctx, namespace, plugin, kind, name, actor, params, dryRun)
 	default:
 		return nil, fmt.Errorf("unknown promotion action: %s", action)
 	}
@@ -52,7 +52,7 @@ func (h *PromotionActionHandler) HandleAction(ctx context.Context, plugin, kind,
 
 // handleVersionCreate creates an immutable version snapshot.
 // params: { "versionLabel": "v1.0" }
-func (h *PromotionActionHandler) handleVersionCreate(ctx context.Context, plugin, kind, name, actor string, params map[string]any, dryRun bool) (*ActionResult, error) {
+func (h *PromotionActionHandler) handleVersionCreate(ctx context.Context, namespace, plugin, kind, name, actor string, params map[string]any, dryRun bool) (*ActionResult, error) {
 	versionLabel, _ := params["versionLabel"].(string)
 	if versionLabel == "" {
 		return nil, fmt.Errorf("missing or invalid 'versionLabel' parameter")
@@ -60,7 +60,7 @@ func (h *PromotionActionHandler) handleVersionCreate(ctx context.Context, plugin
 	reason, _ := params["reason"].(string)
 
 	uid := fmt.Sprintf("%s:%s:%s", plugin, kind, name)
-	govRecord, err := h.govStore.EnsureExists(plugin, kind, name, uid, actor)
+	govRecord, err := h.govStore.EnsureExists(namespace, plugin, kind, name, uid, actor)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get governance record: %w", err)
 	}
@@ -80,6 +80,7 @@ func (h *PromotionActionHandler) handleVersionCreate(ctx context.Context, plugin
 	govSnapshot := overlayToMap(recordToOverlay(govRecord))
 	versionRecord := &AssetVersionRecord{
 		ID:                 uuid.New().String(),
+		Namespace:          namespace,
 		AssetUID:           govRecord.AssetUID,
 		VersionID:          fmt.Sprintf("%s:%s", versionLabel, uuid.New().String()[:8]),
 		VersionLabel:       versionLabel,
@@ -99,6 +100,7 @@ func (h *PromotionActionHandler) handleVersionCreate(ctx context.Context, plugin
 
 	_ = h.auditStore.Append(&AuditEventRecord{
 		ID:            uuid.New().String(),
+		Namespace:     namespace,
 		CorrelationID: uuid.New().String(),
 		EventType:     "governance.version.created",
 		Actor:         actor,
@@ -126,7 +128,7 @@ func (h *PromotionActionHandler) handleVersionCreate(ctx context.Context, plugin
 
 // handleBind sets a version binding for an environment.
 // params: { "environment": "dev", "versionId": "v1.0:abc12345" }
-func (h *PromotionActionHandler) handleBind(ctx context.Context, plugin, kind, name, actor string, params map[string]any, dryRun bool) (*ActionResult, error) {
+func (h *PromotionActionHandler) handleBind(ctx context.Context, namespace, plugin, kind, name, actor string, params map[string]any, dryRun bool) (*ActionResult, error) {
 	environment, _ := params["environment"].(string)
 	if environment == "" {
 		return nil, fmt.Errorf("missing or invalid 'environment' parameter")
@@ -136,7 +138,7 @@ func (h *PromotionActionHandler) handleBind(ctx context.Context, plugin, kind, n
 		return nil, fmt.Errorf("missing or invalid 'versionId' parameter")
 	}
 
-	govRecord, err := h.govStore.Get(plugin, kind, name)
+	govRecord, err := h.govStore.Get(namespace, plugin, kind, name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get governance record: %w", err)
 	}
@@ -183,7 +185,7 @@ func (h *PromotionActionHandler) handleBind(ctx context.Context, plugin, kind, n
 
 	// Get current binding for this env (if any) to record previous_version_id.
 	var previousVersionID string
-	existing, err := h.bindingStore.GetBinding(plugin, kind, name, environment)
+	existing, err := h.bindingStore.GetBinding(namespace, plugin, kind, name, environment)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check existing binding: %w", err)
 	}
@@ -194,6 +196,7 @@ func (h *PromotionActionHandler) handleBind(ctx context.Context, plugin, kind, n
 	now := time.Now()
 	bindingRecord := &EnvBindingRecord{
 		ID:                uuid.New().String(),
+		Namespace:         namespace,
 		Plugin:            plugin,
 		AssetKind:         kind,
 		AssetName:         name,
@@ -211,6 +214,7 @@ func (h *PromotionActionHandler) handleBind(ctx context.Context, plugin, kind, n
 
 	_ = h.auditStore.Append(&AuditEventRecord{
 		ID:            uuid.New().String(),
+		Namespace:     namespace,
 		CorrelationID: uuid.New().String(),
 		EventType:     "governance.promotion.bound",
 		Actor:         actor,
@@ -241,7 +245,7 @@ func (h *PromotionActionHandler) handleBind(ctx context.Context, plugin, kind, n
 
 // handlePromote copies a binding from one environment to another.
 // params: { "fromEnv": "dev", "toEnv": "stage" }
-func (h *PromotionActionHandler) handlePromote(ctx context.Context, plugin, kind, name, actor string, params map[string]any, dryRun bool) (*ActionResult, error) {
+func (h *PromotionActionHandler) handlePromote(ctx context.Context, namespace, plugin, kind, name, actor string, params map[string]any, dryRun bool) (*ActionResult, error) {
 	fromEnv, _ := params["fromEnv"].(string)
 	if fromEnv == "" {
 		return nil, fmt.Errorf("missing or invalid 'fromEnv' parameter")
@@ -255,7 +259,7 @@ func (h *PromotionActionHandler) handlePromote(ctx context.Context, plugin, kind
 	}
 
 	// Get the source binding.
-	sourceBinding, err := h.bindingStore.GetBinding(plugin, kind, name, fromEnv)
+	sourceBinding, err := h.bindingStore.GetBinding(namespace, plugin, kind, name, fromEnv)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get source binding: %w", err)
 	}
@@ -264,7 +268,7 @@ func (h *PromotionActionHandler) handlePromote(ctx context.Context, plugin, kind
 	}
 
 	// Check lifecycle state constraints for the target environment.
-	govRecord, err := h.govStore.Get(plugin, kind, name)
+	govRecord, err := h.govStore.Get(namespace, plugin, kind, name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get governance record: %w", err)
 	}
@@ -297,7 +301,7 @@ func (h *PromotionActionHandler) handlePromote(ctx context.Context, plugin, kind
 
 	// Get existing target binding for previous_version_id tracking.
 	var previousVersionID string
-	existingTarget, err := h.bindingStore.GetBinding(plugin, kind, name, toEnv)
+	existingTarget, err := h.bindingStore.GetBinding(namespace, plugin, kind, name, toEnv)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check existing target binding: %w", err)
 	}
@@ -308,6 +312,7 @@ func (h *PromotionActionHandler) handlePromote(ctx context.Context, plugin, kind
 	now := time.Now()
 	targetBinding := &EnvBindingRecord{
 		ID:                uuid.New().String(),
+		Namespace:         namespace,
 		Plugin:            plugin,
 		AssetKind:         kind,
 		AssetName:         name,
@@ -325,6 +330,7 @@ func (h *PromotionActionHandler) handlePromote(ctx context.Context, plugin, kind
 
 	_ = h.auditStore.Append(&AuditEventRecord{
 		ID:            uuid.New().String(),
+		Namespace:     namespace,
 		CorrelationID: uuid.New().String(),
 		EventType:     "governance.promotion.promoted",
 		Actor:         actor,
@@ -351,7 +357,7 @@ func (h *PromotionActionHandler) handlePromote(ctx context.Context, plugin, kind
 
 // handleRollback updates a binding to a specific (previous) version.
 // params: { "environment": "prod", "targetVersionId": "v1.0:abc12345" }
-func (h *PromotionActionHandler) handleRollback(ctx context.Context, plugin, kind, name, actor string, params map[string]any, dryRun bool) (*ActionResult, error) {
+func (h *PromotionActionHandler) handleRollback(ctx context.Context, namespace, plugin, kind, name, actor string, params map[string]any, dryRun bool) (*ActionResult, error) {
 	environment, _ := params["environment"].(string)
 	if environment == "" {
 		return nil, fmt.Errorf("missing or invalid 'environment' parameter")
@@ -370,7 +376,7 @@ func (h *PromotionActionHandler) handleRollback(ctx context.Context, plugin, kin
 		return nil, fmt.Errorf("version %s not found", targetVersionID)
 	}
 
-	govRecord, err := h.govStore.Get(plugin, kind, name)
+	govRecord, err := h.govStore.Get(namespace, plugin, kind, name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get governance record: %w", err)
 	}
@@ -379,7 +385,7 @@ func (h *PromotionActionHandler) handleRollback(ctx context.Context, plugin, kin
 	}
 
 	// Get current binding.
-	currentBinding, err := h.bindingStore.GetBinding(plugin, kind, name, environment)
+	currentBinding, err := h.bindingStore.GetBinding(namespace, plugin, kind, name, environment)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current binding: %w", err)
 	}
@@ -405,6 +411,7 @@ func (h *PromotionActionHandler) handleRollback(ctx context.Context, plugin, kin
 	now := time.Now()
 	bindingRecord := &EnvBindingRecord{
 		ID:                uuid.New().String(),
+		Namespace:         namespace,
 		Plugin:            plugin,
 		AssetKind:         kind,
 		AssetName:         name,
@@ -422,6 +429,7 @@ func (h *PromotionActionHandler) handleRollback(ctx context.Context, plugin, kin
 
 	_ = h.auditStore.Append(&AuditEventRecord{
 		ID:            uuid.New().String(),
+		Namespace:     namespace,
 		CorrelationID: uuid.New().String(),
 		EventType:     "governance.promotion.rollback",
 		Actor:         actor,

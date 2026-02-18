@@ -10,12 +10,14 @@ Aggregated from all Phase 1–7 implementation reports. Organized by category wi
 - [x] **FilterQuery injection safety**: Client-side `sanitizeFilterValue()` added to escape single quotes in filter values. Server-side parser confirmed safe — uses parameterized queries (`?` placeholders) via GORM. Injection attempt tests added to `parser_test.go` and `query_builder_test.go`. *(M5.9 — resolved in M5.9 gate fixes)*
 - [x] **SecretRef verification**: Comprehensive integration tests added (`TestResolveSecretRefsComprehensive`, `TestIsSecretRefEdgeCases`, `TestSecretRefResolution_E2E_FullFlow`) covering namespace defaulting, missing secrets/keys, multi-property resolution, cross-namespace access. Real-cluster verification steps documented. *(M4.6 — resolved in M5.9 gate fixes)*
 - [ ] **TLS in Docker Compose**: No TLS configuration in `docker-compose.catalog.yaml`. Acceptable for local dev, but production needs TLS termination (ingress or sidecar proxy). Governance endpoints are not hardened beyond existing stack posture. *(M3.1, M7)*
+- [ ] **Fail-closed identity in SAR mode**: Identity middleware defaults to `"anonymous"` when `X-Remote-User` header is missing. In `CATALOG_AUTHZ_MODE=sar`, a missing identity header likely indicates auth proxy misconfiguration and should reject the request (fail-closed) rather than silently proceeding as anonymous. *(M8.3, Phase 8 review)*
 
 ## API & Backend
 
 - [ ] **Source config persistence to file/ConfigMap**: Management mutations currently modify in-memory config only. File-backed and K8s ConfigMap persistence are implemented (Phase 4) but write-back of YAML source files requires writable volume mounts. *(M2.1, M3.4)*
-- [ ] **Async refresh for large sources**: Synchronous refresh blocks the HTTP response. For sources taking >30s, consider adding a timeout or async refresh with status polling. *(M4.3)*
-- [ ] **Rate limiting on refresh endpoints**: No rate limiting implemented. *(M2.1)*
+- [x] **Async refresh for large sources**: Refresh endpoints now enqueue `RefreshJob` and return `202 Accepted` with `jobId` for status polling via `/api/jobs/v1alpha1/refresh/{id}`. Synchronous fallback when no job store configured. *(M4.3, resolved M8.5)*
+- [x] **Rate limiting on refresh endpoints**: `RefreshRateLimiter` implemented per-source with configurable cooldown. Applies at job enqueue time in async mode. *(M2.1, resolved M8.5)*
+- [ ] **Per-namespace refresh rate limits / quotas**: Global rate limiter exists but no per-namespace quotas to prevent "refresh spam" in multi-tenant deployments. A noisy tenant can monopolize refresh capacity. *(M8.5, Phase 8 review)*
 - [ ] **Batch entity counting**: `CountBySource` executes one DB query per source in `ListSources`. For many sources, use a `GROUP BY source_id` batch query. *(M3.3)*
 - [ ] **`ResolvePluginBasePath` caching**: BFF makes a full `GET /api/plugins` call for every management request. Cache the plugin list to reduce round-trips. *(M3.2)*
 - [ ] **BFF health check to catalog-server**: Fail-fast validates config only, not connectivity. Add a startup health check. *(M3.2)*
@@ -39,7 +41,8 @@ Aggregated from all Phase 1–7 implementation reports. Organized by category wi
 - [ ] **Cross-asset link target resolution**: Agent cross-links (`skillRef`, `guardrailRef`, etc.) populate `AssetLinks.Related` with `{Kind, Name}` but don't verify targets exist. *(M6.3)*
 - [ ] **Wire `VerifyingProvenanceExtractor` as default-on**: The decorator exists and persists integrity fields to DB, but is not wired into the default server pipeline. Callers must explicitly wrap their extractor. Should be activated by default so provenance integrity verification happens automatically for all plugins. *(M7, M7.1)*
 - [ ] **OPA/Rego approval policy adapter**: Current YAML-based policy engine covers basic use cases. Enterprise governance typically requires pluggable policy backends (OPA/Rego) for complex conditional logic, external data sources, and audit-grade policy evaluation. *(M7, Phase 8)*
-- [ ] **RBAC layering for governance actions**: Governance actions (lifecycle transitions, approval decisions, version creation) use `X-User-Principal` header but lack role-based access control. No enforcement that only designated roles can approve, promote, or archive assets. *(M7, Phase 8)*
+- [x] **RBAC layering for governance actions**: SAR-based authorization implemented via `pkg/authz`. Governance endpoints mapped to `approvals` resource with per-verb permissions. `RequirePermission` middleware enforces role-based access when `CATALOG_AUTHZ_MODE=sar`. *(M7, resolved M8.3)*
+- [ ] **Dynamic namespace discovery from Kubernetes**: `/api/tenancy/v1alpha1/namespaces` returns a static list from `CATALOG_NAMESPACES` env var or `["default"]`. Not dynamically derived from Kubernetes RBAC (SAR namespace enumeration) or Kubeflow Profile access. Should list only namespaces the authenticated user has SAR access to. *(M8.1, M8.8, Phase 8 review)*
 - [ ] **Phase 5 entity action endpoint format**: `TestConformance` action tests (tag/annotate/deprecate) fail across all plugins due to entity action endpoint format mismatch. Pre-existing Phase 5 issue, not caused by Phase 7. *(M5, M7.1)*
 
 ## UI Frontend
@@ -65,7 +68,7 @@ Aggregated from all Phase 1–7 implementation reports. Organized by category wi
 - [ ] **Shell completion**: Cobra supports it natively but not yet wired. Dynamic commands require a running server for completion suggestions. *(M2.2, M5.6)*
 - [ ] **`--params-file` flag for actions**: Only inline `key=val` is supported. Add JSON/YAML file loading for action parameters. *(M5.6)*
 - [ ] **Interactive confirmation prompts**: No confirmation for destructive operations (delete, disable). *(M2.2)*
-- [ ] **`--namespace` flag**: Not yet available for multi-tenant deployments. *(M2.2)*
+- [x] **`--namespace` flag**: `catalogctl --namespace` / `-n` persistent flag implemented. Resolution: flag > `CATALOG_NAMESPACE` env > empty. `catalogctl namespaces` command lists available namespaces. *(M2.2, resolved M8.8)*
 - [ ] **Source management subcommands in catalogctl**: `sources validate`, `sources apply`, `sources enable`, `sources disable` are not yet implemented (only `list` and `refresh`). *(M5.6)*
 - [ ] **CLI plugin discovery caching**: Each invocation makes a fresh `GET /api/plugins` call. *(M5.6)*
 
@@ -85,6 +88,11 @@ Aggregated from all Phase 1–7 implementation reports. Organized by category wi
 - [ ] **React component example in UI/CLI guide**: Conceptual extension points described but no working React component example. *(M1.M5)*
 - [ ] **`catalog-gen` error messages and troubleshooting guide**: Common failures (missing `catalog.yaml`, invalid types) not documented. *(M1.M5)*
 
+## Observability & Telemetry
+
+- [ ] **Prometheus metrics**: No metrics exposition endpoint. Key metrics needed: request latency histograms, SAR decision cache hit/miss rates, job queue depth, refresh duration, active workers, leader election status. *(Phase 8 review)*
+- [ ] **OpenTelemetry tracing**: No distributed tracing instrumentation. Traces across tenancy middleware -> authz -> handler -> DB would aid debugging in multi-tenant deployments. *(Phase 8 review)*
+
 ## Infrastructure & DevOps
 
 - [ ] **PostgreSQL persistent volume**: Data is ephemeral (`docker compose down -v` destroys all). Named volume for persistent dev data. *(M3.1)*
@@ -93,6 +101,7 @@ Aggregated from all Phase 1–7 implementation reports. Organized by category wi
 - [ ] **MCP test data duplication**: Data duplicated in `catalog/plugins/mcp/testdata/` and `catalog/internal/catalog/testdata/`. Symlink or shared directory. *(M1.M6)*
 - [ ] **Health check endpoint**: Catalog-server Docker health check uses `--help` flag. Proper `/healthz` or `/readyz` HTTP probes were added in Phase 4 (M4.4) but Docker Compose may need updating. *(M3.1, M4.4)*
 - [ ] **Healthcheck binary vs gRPC**: Current binary could be replaced by `grpc_health_probe` if gRPC is added. *(M4.4)*
+- [ ] **Versioned DB migrations**: Phase 8 uses GORM `AutoMigrate` (with advisory locking for multi-replica safety). For enterprise ops, versioned migrations (e.g., golang-migrate, atlas) would provide explicit rollback, migration history, and safer schema evolution. Current rollback story is limited to "add column with default" idempotency. *(M8.2, M8.7, Phase 8 review)*
 - [ ] **Dockerfile updates for production builds**: Sample data `COPY` instructions needed for Phase 6 plugins (prompts, agents, guardrails, policies, skills). Current Dockerfile only copies data for model and MCP plugins. *(M6.6)*
 - [ ] **CI pipeline integration for Phase 6**: Phase 6 builds should run conformance suite as part of PR checks. *(M6.6)*
 
@@ -117,10 +126,11 @@ Aggregated from all Phase 1–7 implementation reports. Organized by category wi
 - [ ] **Prompt rendering/execution endpoint**: Prompt Templates plugin is discovery-only. Future endpoint for rendering templates with parameters. *(M6.2)*
 - [ ] **Skill execution/invocation endpoint**: Skills plugin is discovery-only. Future endpoint for invoking skills with input. *(M6.5)*
 - [ ] **Agent execution/invocation endpoint**: Agents plugin is discovery-only. Future endpoint for invoking agents. *(M6.3)*
+- [ ] **Running job cancellation**: `Cancel()` only transitions queued jobs to canceled. Running jobs rely on cooperative cancellation (worker checks context). A forceful cancel mechanism (e.g., context cancellation propagated to the worker goroutine) would improve operational control. Known limitation, acceptable for current use. *(M8.5, Phase 8 review)*
 - [ ] **Registry/deployment integration bridge**: Connect catalog governance (lifecycle states, promotion bindings) to actual deployment systems (Model Registry, K8s, serving infrastructure). Currently governance is catalog-layer only. *(Phase 8)*
 - [ ] **External ecosystem alignment**: Integrate with external AI asset standards and registries (MLflow, OCI artifacts, SLSA/in-toto supply chain metadata, Sigstore signing). *(Phase 8)*
 - [ ] **Provenance signing with Sigstore/cosign**: `VerifyingProvenanceExtractor` uses content hashing. Production supply chain security requires cryptographic signing (cosign, in-toto attestations). *(Phase 8)*
 
 ---
 
-*Last updated: 2026-02-17. Generated from implementation reports M1.1–M1.6, M2.1–M2.6, M3.1–M3.4, M4.1–M4.6, M5.1–M5.9, M6.1–M6.6, M7, M7.1.*
+*Last updated: 2026-02-18. Generated from implementation reports M1.1–M1.6, M2.1–M2.6, M3.1–M3.4, M4.1–M4.6, M5.1–M5.9, M6.1–M6.6, M7, M7.1, M8.1–M8.10.*

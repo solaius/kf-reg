@@ -27,6 +27,9 @@ func (s *VersionStore) AutoMigrate() error {
 
 // CreateVersion inserts a new immutable version record.
 func (s *VersionStore) CreateVersion(record *AssetVersionRecord) error {
+	if record.Namespace == "" {
+		record.Namespace = "default"
+	}
 	if err := s.db.Create(record).Error; err != nil {
 		return fmt.Errorf("create version: %w", err)
 	}

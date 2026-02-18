@@ -27,7 +27,7 @@ func TestPromotionActionHandler_VersionCreate(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a version.
-	result, err := h.HandleAction(ctx, "mcp", "mcpserver", "filesystem", "alice", "version.create", map[string]any{
+	result, err := h.HandleAction(ctx, "default", "mcp", "mcpserver", "filesystem", "alice", "version.create", map[string]any{
 		"versionLabel": "v1.0",
 	}, false)
 	require.NoError(t, err)
@@ -49,7 +49,7 @@ func TestPromotionActionHandler_VersionCreate_DryRun(t *testing.T) {
 	h := newTestPromotionHandler(t)
 	ctx := context.Background()
 
-	result, err := h.HandleAction(ctx, "mcp", "mcpserver", "filesystem", "alice", "version.create", map[string]any{
+	result, err := h.HandleAction(ctx, "default", "mcp", "mcpserver", "filesystem", "alice", "version.create", map[string]any{
 		"versionLabel": "v1.0",
 	}, true)
 	require.NoError(t, err)
@@ -66,7 +66,7 @@ func TestPromotionActionHandler_VersionCreate_MissingLabel(t *testing.T) {
 	h := newTestPromotionHandler(t)
 	ctx := context.Background()
 
-	_, err := h.HandleAction(ctx, "mcp", "mcpserver", "filesystem", "alice", "version.create", map[string]any{}, false)
+	_, err := h.HandleAction(ctx, "default", "mcp", "mcpserver", "filesystem", "alice", "version.create", map[string]any{}, false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "versionLabel")
 }
@@ -76,14 +76,14 @@ func TestPromotionActionHandler_BindToDev(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a version first.
-	vResult, err := h.HandleAction(ctx, "mcp", "mcpserver", "filesystem", "alice", "version.create", map[string]any{
+	vResult, err := h.HandleAction(ctx, "default", "mcp", "mcpserver", "filesystem", "alice", "version.create", map[string]any{
 		"versionLabel": "v1.0",
 	}, false)
 	require.NoError(t, err)
 	versionID := vResult.Data["versionId"].(string)
 
 	// Bind to dev (asset is draft, which is allowed for dev).
-	result, err := h.HandleAction(ctx, "mcp", "mcpserver", "filesystem", "alice", "promotion.bind", map[string]any{
+	result, err := h.HandleAction(ctx, "default", "mcp", "mcpserver", "filesystem", "alice", "promotion.bind", map[string]any{
 		"environment": "dev",
 		"versionId":   versionID,
 	}, false)
@@ -99,14 +99,14 @@ func TestPromotionActionHandler_BindToProdWhileDraft(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a version first.
-	vResult, err := h.HandleAction(ctx, "mcp", "mcpserver", "filesystem", "alice", "version.create", map[string]any{
+	vResult, err := h.HandleAction(ctx, "default", "mcp", "mcpserver", "filesystem", "alice", "version.create", map[string]any{
 		"versionLabel": "v1.0",
 	}, false)
 	require.NoError(t, err)
 	versionID := vResult.Data["versionId"].(string)
 
 	// Try to bind to prod while draft -- should fail.
-	_, err = h.HandleAction(ctx, "mcp", "mcpserver", "filesystem", "alice", "promotion.bind", map[string]any{
+	_, err = h.HandleAction(ctx, "default", "mcp", "mcpserver", "filesystem", "alice", "promotion.bind", map[string]any{
 		"environment": "prod",
 		"versionId":   versionID,
 	}, false)
@@ -119,25 +119,25 @@ func TestPromotionActionHandler_BindWhileArchived(t *testing.T) {
 	ctx := context.Background()
 
 	// Create governance record with archived state.
-	_, err := h.govStore.EnsureExists("mcp", "mcpserver", "filesystem", "mcp:mcpserver:filesystem", "alice")
+	_, err := h.govStore.EnsureExists("default", "mcp", "mcpserver", "filesystem", "mcp:mcpserver:filesystem", "alice")
 	require.NoError(t, err)
 
 	// Manually update to archived state. We need to go through the normal flow:
 	// draft -> approved -> archived. Let's just update the record directly.
-	rec, err := h.govStore.Get("mcp", "mcpserver", "filesystem")
+	rec, err := h.govStore.Get("default", "mcp", "mcpserver", "filesystem")
 	require.NoError(t, err)
 	rec.LifecycleState = string(StateArchived)
 	require.NoError(t, h.govStore.Upsert(rec))
 
 	// Create a version.
-	vResult, err := h.HandleAction(ctx, "mcp", "mcpserver", "filesystem", "alice", "version.create", map[string]any{
+	vResult, err := h.HandleAction(ctx, "default", "mcp", "mcpserver", "filesystem", "alice", "version.create", map[string]any{
 		"versionLabel": "v1.0",
 	}, false)
 	require.NoError(t, err)
 	versionID := vResult.Data["versionId"].(string)
 
 	// Try to bind to any env while archived -- should fail.
-	_, err = h.HandleAction(ctx, "mcp", "mcpserver", "filesystem", "alice", "promotion.bind", map[string]any{
+	_, err = h.HandleAction(ctx, "default", "mcp", "mcpserver", "filesystem", "alice", "promotion.bind", map[string]any{
 		"environment": "dev",
 		"versionId":   versionID,
 	}, false)
@@ -150,29 +150,29 @@ func TestPromotionActionHandler_PromoteDevToStage(t *testing.T) {
 	ctx := context.Background()
 
 	// Set up: create governance record in approved state.
-	_, err := h.govStore.EnsureExists("mcp", "mcpserver", "filesystem", "mcp:mcpserver:filesystem", "alice")
+	_, err := h.govStore.EnsureExists("default", "mcp", "mcpserver", "filesystem", "mcp:mcpserver:filesystem", "alice")
 	require.NoError(t, err)
-	rec, err := h.govStore.Get("mcp", "mcpserver", "filesystem")
+	rec, err := h.govStore.Get("default", "mcp", "mcpserver", "filesystem")
 	require.NoError(t, err)
 	rec.LifecycleState = string(StateApproved)
 	require.NoError(t, h.govStore.Upsert(rec))
 
 	// Create a version.
-	vResult, err := h.HandleAction(ctx, "mcp", "mcpserver", "filesystem", "alice", "version.create", map[string]any{
+	vResult, err := h.HandleAction(ctx, "default", "mcp", "mcpserver", "filesystem", "alice", "version.create", map[string]any{
 		"versionLabel": "v1.0",
 	}, false)
 	require.NoError(t, err)
 	versionID := vResult.Data["versionId"].(string)
 
 	// Bind to dev.
-	_, err = h.HandleAction(ctx, "mcp", "mcpserver", "filesystem", "alice", "promotion.bind", map[string]any{
+	_, err = h.HandleAction(ctx, "default", "mcp", "mcpserver", "filesystem", "alice", "promotion.bind", map[string]any{
 		"environment": "dev",
 		"versionId":   versionID,
 	}, false)
 	require.NoError(t, err)
 
 	// Promote from dev to stage.
-	result, err := h.HandleAction(ctx, "mcp", "mcpserver", "filesystem", "alice", "promotion.promote", map[string]any{
+	result, err := h.HandleAction(ctx, "default", "mcp", "mcpserver", "filesystem", "alice", "promotion.promote", map[string]any{
 		"fromEnv": "dev",
 		"toEnv":   "stage",
 	}, false)
@@ -182,7 +182,7 @@ func TestPromotionActionHandler_PromoteDevToStage(t *testing.T) {
 	assert.Equal(t, versionID, result.Data["versionId"])
 
 	// Verify stage binding exists.
-	binding, err := h.bindingStore.GetBinding("mcp", "mcpserver", "filesystem", "stage")
+	binding, err := h.bindingStore.GetBinding("default", "mcp", "mcpserver", "filesystem", "stage")
 	require.NoError(t, err)
 	require.NotNil(t, binding)
 	assert.Equal(t, versionID, binding.VersionID)
@@ -193,48 +193,48 @@ func TestPromotionActionHandler_RollbackProd(t *testing.T) {
 	ctx := context.Background()
 
 	// Set up approved state.
-	_, err := h.govStore.EnsureExists("mcp", "mcpserver", "filesystem", "mcp:mcpserver:filesystem", "alice")
+	_, err := h.govStore.EnsureExists("default", "mcp", "mcpserver", "filesystem", "mcp:mcpserver:filesystem", "alice")
 	require.NoError(t, err)
-	rec, err := h.govStore.Get("mcp", "mcpserver", "filesystem")
+	rec, err := h.govStore.Get("default", "mcp", "mcpserver", "filesystem")
 	require.NoError(t, err)
 	rec.LifecycleState = string(StateApproved)
 	require.NoError(t, h.govStore.Upsert(rec))
 
 	// Create two versions.
-	v1Result, err := h.HandleAction(ctx, "mcp", "mcpserver", "filesystem", "alice", "version.create", map[string]any{
+	v1Result, err := h.HandleAction(ctx, "default", "mcp", "mcpserver", "filesystem", "alice", "version.create", map[string]any{
 		"versionLabel": "v1.0",
 	}, false)
 	require.NoError(t, err)
 	v1ID := v1Result.Data["versionId"].(string)
 
-	v2Result, err := h.HandleAction(ctx, "mcp", "mcpserver", "filesystem", "alice", "version.create", map[string]any{
+	v2Result, err := h.HandleAction(ctx, "default", "mcp", "mcpserver", "filesystem", "alice", "version.create", map[string]any{
 		"versionLabel": "v2.0",
 	}, false)
 	require.NoError(t, err)
 	v2ID := v2Result.Data["versionId"].(string)
 
 	// Bind v1 to prod.
-	_, err = h.HandleAction(ctx, "mcp", "mcpserver", "filesystem", "alice", "promotion.bind", map[string]any{
+	_, err = h.HandleAction(ctx, "default", "mcp", "mcpserver", "filesystem", "alice", "promotion.bind", map[string]any{
 		"environment": "prod",
 		"versionId":   v1ID,
 	}, false)
 	require.NoError(t, err)
 
 	// Bind v2 to prod (updates binding).
-	_, err = h.HandleAction(ctx, "mcp", "mcpserver", "filesystem", "alice", "promotion.bind", map[string]any{
+	_, err = h.HandleAction(ctx, "default", "mcp", "mcpserver", "filesystem", "alice", "promotion.bind", map[string]any{
 		"environment": "prod",
 		"versionId":   v2ID,
 	}, false)
 	require.NoError(t, err)
 
 	// Verify current binding is v2.
-	binding, err := h.bindingStore.GetBinding("mcp", "mcpserver", "filesystem", "prod")
+	binding, err := h.bindingStore.GetBinding("default", "mcp", "mcpserver", "filesystem", "prod")
 	require.NoError(t, err)
 	assert.Equal(t, v2ID, binding.VersionID)
 	assert.Equal(t, v1ID, binding.PreviousVersionID)
 
 	// Rollback to v1.
-	result, err := h.HandleAction(ctx, "mcp", "mcpserver", "filesystem", "alice", "promotion.rollback", map[string]any{
+	result, err := h.HandleAction(ctx, "default", "mcp", "mcpserver", "filesystem", "alice", "promotion.rollback", map[string]any{
 		"environment":     "prod",
 		"targetVersionId": v1ID,
 	}, false)
@@ -245,7 +245,7 @@ func TestPromotionActionHandler_RollbackProd(t *testing.T) {
 	assert.Equal(t, v2ID, result.Data["previousVersionId"])
 
 	// Verify binding was updated.
-	binding, err = h.bindingStore.GetBinding("mcp", "mcpserver", "filesystem", "prod")
+	binding, err = h.bindingStore.GetBinding("default", "mcp", "mcpserver", "filesystem", "prod")
 	require.NoError(t, err)
 	assert.Equal(t, v1ID, binding.VersionID)
 	assert.Equal(t, v2ID, binding.PreviousVersionID)
@@ -255,7 +255,7 @@ func TestPromotionActionHandler_UnknownAction(t *testing.T) {
 	h := newTestPromotionHandler(t)
 	ctx := context.Background()
 
-	_, err := h.HandleAction(ctx, "mcp", "mcpserver", "filesystem", "alice", "unknown.action", map[string]any{}, false)
+	_, err := h.HandleAction(ctx, "default", "mcp", "mcpserver", "filesystem", "alice", "unknown.action", map[string]any{}, false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown promotion action")
 }
@@ -264,7 +264,7 @@ func TestPromotionActionHandler_PromoteSameEnv(t *testing.T) {
 	h := newTestPromotionHandler(t)
 	ctx := context.Background()
 
-	_, err := h.HandleAction(ctx, "mcp", "mcpserver", "filesystem", "alice", "promotion.promote", map[string]any{
+	_, err := h.HandleAction(ctx, "default", "mcp", "mcpserver", "filesystem", "alice", "promotion.promote", map[string]any{
 		"fromEnv": "dev",
 		"toEnv":   "dev",
 	}, false)
@@ -277,11 +277,11 @@ func TestPromotionActionHandler_BindNonexistentVersion(t *testing.T) {
 	ctx := context.Background()
 
 	// Create governance record.
-	_, err := h.govStore.EnsureExists("mcp", "mcpserver", "filesystem", "mcp:mcpserver:filesystem", "alice")
+	_, err := h.govStore.EnsureExists("default", "mcp", "mcpserver", "filesystem", "mcp:mcpserver:filesystem", "alice")
 	require.NoError(t, err)
 
 	// Try binding a version that doesn't exist.
-	_, err = h.HandleAction(ctx, "mcp", "mcpserver", "filesystem", "alice", "promotion.bind", map[string]any{
+	_, err = h.HandleAction(ctx, "default", "mcp", "mcpserver", "filesystem", "alice", "promotion.bind", map[string]any{
 		"environment": "dev",
 		"versionId":   "nonexistent:version",
 	}, false)
@@ -294,11 +294,11 @@ func TestPromotionActionHandler_PromoteNoSourceBinding(t *testing.T) {
 	ctx := context.Background()
 
 	// Create governance record.
-	_, err := h.govStore.EnsureExists("mcp", "mcpserver", "filesystem", "mcp:mcpserver:filesystem", "alice")
+	_, err := h.govStore.EnsureExists("default", "mcp", "mcpserver", "filesystem", "mcp:mcpserver:filesystem", "alice")
 	require.NoError(t, err)
 
 	// Try promoting without a source binding.
-	_, err = h.HandleAction(ctx, "mcp", "mcpserver", "filesystem", "alice", "promotion.promote", map[string]any{
+	_, err = h.HandleAction(ctx, "default", "mcp", "mcpserver", "filesystem", "alice", "promotion.promote", map[string]any{
 		"fromEnv": "dev",
 		"toEnv":   "stage",
 	}, false)
@@ -311,11 +311,11 @@ func TestPromotionActionHandler_RollbackNonexistentVersion(t *testing.T) {
 	ctx := context.Background()
 
 	// Create governance record.
-	_, err := h.govStore.EnsureExists("mcp", "mcpserver", "filesystem", "mcp:mcpserver:filesystem", "alice")
+	_, err := h.govStore.EnsureExists("default", "mcp", "mcpserver", "filesystem", "mcp:mcpserver:filesystem", "alice")
 	require.NoError(t, err)
 
 	// Try rolling back to a nonexistent version.
-	_, err = h.HandleAction(ctx, "mcp", "mcpserver", "filesystem", "alice", "promotion.rollback", map[string]any{
+	_, err = h.HandleAction(ctx, "default", "mcp", "mcpserver", "filesystem", "alice", "promotion.rollback", map[string]any{
 		"environment":     "prod",
 		"targetVersionId": "nonexistent:version",
 	}, false)

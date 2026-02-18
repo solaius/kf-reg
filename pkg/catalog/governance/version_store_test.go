@@ -139,7 +139,7 @@ func TestBindingStore_UpsertAndGet(t *testing.T) {
 	require.NoError(t, err)
 
 	// Get the binding.
-	got, err := bs.GetBinding("mcp", "mcpserver", "filesystem", "dev")
+	got, err := bs.GetBinding("default", "mcp", "mcpserver", "filesystem", "dev")
 	require.NoError(t, err)
 	require.NotNil(t, got)
 	assert.Equal(t, "dev", got.Environment)
@@ -163,7 +163,7 @@ func TestBindingStore_UpsertAndGet(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify it was updated.
-	got, err = bs.GetBinding("mcp", "mcpserver", "filesystem", "dev")
+	got, err = bs.GetBinding("default", "mcp", "mcpserver", "filesystem", "dev")
 	require.NoError(t, err)
 	require.NotNil(t, got)
 	assert.Equal(t, "v2.0:def67890", got.VersionID)
@@ -171,7 +171,7 @@ func TestBindingStore_UpsertAndGet(t *testing.T) {
 	assert.Equal(t, "v1.0:abc12345", got.PreviousVersionID)
 
 	// Not found for different environment.
-	got, err = bs.GetBinding("mcp", "mcpserver", "filesystem", "prod")
+	got, err = bs.GetBinding("default", "mcp", "mcpserver", "filesystem", "prod")
 	require.NoError(t, err)
 	assert.Nil(t, got)
 }
@@ -212,7 +212,7 @@ func TestBindingStore_ListBindings(t *testing.T) {
 	require.NoError(t, err)
 
 	// List bindings for filesystem.
-	bindings, err := bs.ListBindings("mcp", "mcpserver", "filesystem")
+	bindings, err := bs.ListBindings("default", "mcp", "mcpserver", "filesystem")
 	require.NoError(t, err)
 	assert.Len(t, bindings, 3)
 	// Should be ordered alphabetically by environment.
@@ -221,12 +221,12 @@ func TestBindingStore_ListBindings(t *testing.T) {
 	assert.Equal(t, "stage", bindings[2].Environment)
 
 	// List bindings for llama.
-	bindings, err = bs.ListBindings("model", "model", "llama")
+	bindings, err = bs.ListBindings("default", "model", "model", "llama")
 	require.NoError(t, err)
 	assert.Len(t, bindings, 1)
 
 	// List bindings for nonexistent asset.
-	bindings, err = bs.ListBindings("mcp", "mcpserver", "nonexistent")
+	bindings, err = bs.ListBindings("default", "mcp", "mcpserver", "nonexistent")
 	require.NoError(t, err)
 	assert.Empty(t, bindings)
 }

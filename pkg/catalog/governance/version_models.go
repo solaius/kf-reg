@@ -5,6 +5,7 @@ import "time"
 // AssetVersionRecord stores an immutable version snapshot.
 type AssetVersionRecord struct {
 	ID                      string     `gorm:"primaryKey;column:id;type:varchar(36)"`
+	Namespace               string     `gorm:"column:namespace;default:default;not null"`
 	AssetUID                string     `gorm:"column:asset_uid;index:idx_version_asset;not null"`
 	VersionID               string     `gorm:"column:version_id;uniqueIndex;not null"`
 	VersionLabel            string     `gorm:"column:version_label;not null"`
@@ -27,13 +28,14 @@ type AssetVersionRecord struct {
 // TableName returns the GORM table name.
 func (AssetVersionRecord) TableName() string { return "asset_versions" }
 
-// EnvBindingRecord maps (plugin, kind, name, environment) to a version.
+// EnvBindingRecord maps (namespace, plugin, kind, name, environment) to a version.
 type EnvBindingRecord struct {
 	ID                string    `gorm:"primaryKey;column:id;type:varchar(36)"`
-	Plugin            string    `gorm:"column:plugin;uniqueIndex:idx_binding_unique,priority:1;not null"`
-	AssetKind         string    `gorm:"column:asset_kind;uniqueIndex:idx_binding_unique,priority:2;not null"`
-	AssetName         string    `gorm:"column:asset_name;uniqueIndex:idx_binding_unique,priority:3;not null"`
-	Environment       string    `gorm:"column:environment;uniqueIndex:idx_binding_unique,priority:4;not null"`
+	Namespace         string    `gorm:"column:namespace;uniqueIndex:idx_binding_unique,priority:1;default:default;not null"`
+	Plugin            string    `gorm:"column:plugin;uniqueIndex:idx_binding_unique,priority:2;not null"`
+	AssetKind         string    `gorm:"column:asset_kind;uniqueIndex:idx_binding_unique,priority:3;not null"`
+	AssetName         string    `gorm:"column:asset_name;uniqueIndex:idx_binding_unique,priority:4;not null"`
+	Environment       string    `gorm:"column:environment;uniqueIndex:idx_binding_unique,priority:5;not null"`
 	AssetUID          string    `gorm:"column:asset_uid;index;not null"`
 	VersionID         string    `gorm:"column:version_id;not null"`
 	BoundAt           time.Time `gorm:"column:bound_at;not null"`

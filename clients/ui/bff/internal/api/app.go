@@ -107,6 +107,9 @@ const (
 	CatalogEntityActionPath = ApiPathPrefix + "/catalog/:" + CatalogPluginName + "/entities/:" + CatalogEntityPlural + "/:" + CatalogEntityName + "/action"
 	CatalogSourceActionPath = ApiPathPrefix + "/catalog/:" + CatalogPluginName + "/sources/:" + CatalogSourceId + "/action"
 
+	// Tenancy routes
+	TenancyNamespacesPath = ApiPathPrefix + "/tenancy/namespaces"
+
 	// Governance routes
 	GovernancePluginName  = "gov_plugin"
 	GovernanceKindName    = "gov_kind"
@@ -327,6 +330,9 @@ func (app *App) Routes() http.Handler {
 	apiRouter.GET(CatalogEntityGetPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.GetCatalogEntityHandler)))
 	apiRouter.POST(CatalogEntityActionPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.PostCatalogEntityActionHandler)))
 	apiRouter.POST(CatalogSourceActionPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.PostCatalogSourceActionHandler)))
+
+	// Tenancy routes (namespace is optional; this endpoint lists available namespaces)
+	apiRouter.GET(TenancyNamespacesPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.GetTenancyNamespacesHandler)))
 
 	// Governance routes (namespace is optional for global governance operations)
 	apiRouter.GET(GovernanceAssetPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.GetGovernanceHandler)))

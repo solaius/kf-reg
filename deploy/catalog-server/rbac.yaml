@@ -21,6 +21,10 @@ rules:
     resources: ["secrets"]
     verbs: ["get"]
     # Required for resolving SecretRef values in source configuration.
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update"]
+    # Required for Kubernetes Lease-based leader election (HA mode).
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

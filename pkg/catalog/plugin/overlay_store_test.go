@@ -45,7 +45,7 @@ func TestOverlayStore_UpsertAndGet(t *testing.T) {
 	require.NoError(t, err)
 
 	// Get the record back.
-	got, err := store.Get("mcp", "mcpserver", "server-1")
+	got, err := store.Get("default", "mcp", "mcpserver", "server-1")
 	require.NoError(t, err)
 	require.NotNil(t, got)
 
@@ -77,14 +77,14 @@ func TestOverlayStore_Upsert_UpdateExisting(t *testing.T) {
 	require.NoError(t, store.Upsert(record))
 
 	// Verify the update.
-	got, err := store.Get("mcp", "mcpserver", "server-1")
+	got, err := store.Get("default", "mcp", "mcpserver", "server-1")
 	require.NoError(t, err)
 	require.NotNil(t, got)
 	assert.Equal(t, StringSlice{"v2", "production"}, got.Tags)
 	assert.Equal(t, "deprecated", got.Lifecycle)
 
 	// Verify only one record exists.
-	records, err := store.ListByPlugin("mcp")
+	records, err := store.ListByPlugin("default", "mcp")
 	require.NoError(t, err)
 	assert.Len(t, records, 1)
 }
@@ -92,7 +92,7 @@ func TestOverlayStore_Upsert_UpdateExisting(t *testing.T) {
 func TestOverlayStore_Get_NotFound(t *testing.T) {
 	store := newTestOverlayStore(t)
 
-	got, err := store.Get("mcp", "mcpserver", "nonexistent")
+	got, err := store.Get("default", "mcp", "mcpserver", "nonexistent")
 	require.NoError(t, err)
 	assert.Nil(t, got)
 }
@@ -110,16 +110,16 @@ func TestOverlayStore_Delete(t *testing.T) {
 	require.NoError(t, store.Upsert(record))
 
 	// Verify it exists.
-	got, err := store.Get("mcp", "mcpserver", "server-1")
+	got, err := store.Get("default", "mcp", "mcpserver", "server-1")
 	require.NoError(t, err)
 	require.NotNil(t, got)
 
 	// Delete it.
-	err = store.Delete("mcp", "mcpserver", "server-1")
+	err = store.Delete("default", "mcp", "mcpserver", "server-1")
 	require.NoError(t, err)
 
 	// Verify it's gone.
-	got, err = store.Get("mcp", "mcpserver", "server-1")
+	got, err = store.Get("default", "mcp", "mcpserver", "server-1")
 	require.NoError(t, err)
 	assert.Nil(t, got)
 }
@@ -128,7 +128,7 @@ func TestOverlayStore_Delete_NonExistent(t *testing.T) {
 	store := newTestOverlayStore(t)
 
 	// Deleting a non-existent record should not error.
-	err := store.Delete("mcp", "mcpserver", "nonexistent")
+	err := store.Delete("default", "mcp", "mcpserver", "nonexistent")
 	require.NoError(t, err)
 }
 
@@ -156,19 +156,76 @@ func TestOverlayStore_ListByPlugin(t *testing.T) {
 	}))
 
 	// List for "mcp" plugin.
-	mcpRecords, err := store.ListByPlugin("mcp")
+	mcpRecords, err := store.ListByPlugin("default", "mcp")
 	require.NoError(t, err)
 	assert.Len(t, mcpRecords, 2)
 
 	// List for "model" plugin.
-	modelRecords, err := store.ListByPlugin("model")
+	modelRecords, err := store.ListByPlugin("default", "model")
 	require.NoError(t, err)
 	assert.Len(t, modelRecords, 1)
 
 	// List for non-existent plugin.
-	emptyRecords, err := store.ListByPlugin("nonexistent")
+	emptyRecords, err := store.ListByPlugin("default", "nonexistent")
 	require.NoError(t, err)
 	assert.Empty(t, emptyRecords)
+}
+
+func TestOverlayStore_TenantIsolation(t *testing.T) {
+	store := newTestOverlayStore(t)
+
+	// Create records in two namespaces with the same identity.
+	recA := &OverlayRecord{
+		Namespace:  "ns-a",
+		PluginName: "mcp",
+		EntityKind: "mcpserver",
+		EntityUID:  "server-1",
+		Tags:       StringSlice{"alpha"},
+		Lifecycle:  "active",
+	}
+	require.NoError(t, store.Upsert(recA))
+
+	recB := &OverlayRecord{
+		Namespace:  "ns-b",
+		PluginName: "mcp",
+		EntityKind: "mcpserver",
+		EntityUID:  "server-1",
+		Tags:       StringSlice{"beta"},
+		Lifecycle:  "deprecated",
+	}
+	require.NoError(t, store.Upsert(recB))
+
+	// Get should return the correct namespace's record.
+	gotA, err := store.Get("ns-a", "mcp", "mcpserver", "server-1")
+	require.NoError(t, err)
+	require.NotNil(t, gotA)
+	assert.Equal(t, StringSlice{"alpha"}, gotA.Tags)
+	assert.Equal(t, "active", gotA.Lifecycle)
+
+	gotB, err := store.Get("ns-b", "mcp", "mcpserver", "server-1")
+	require.NoError(t, err)
+	require.NotNil(t, gotB)
+	assert.Equal(t, StringSlice{"beta"}, gotB.Tags)
+	assert.Equal(t, "deprecated", gotB.Lifecycle)
+
+	// ListByPlugin should be namespace-scoped.
+	listA, err := store.ListByPlugin("ns-a", "mcp")
+	require.NoError(t, err)
+	assert.Len(t, listA, 1)
+
+	listB, err := store.ListByPlugin("ns-b", "mcp")
+	require.NoError(t, err)
+	assert.Len(t, listB, 1)
+
+	// Delete in ns-a should not affect ns-b.
+	err = store.Delete("ns-a", "mcp", "mcpserver", "server-1")
+	require.NoError(t, err)
+	gotA, err = store.Get("ns-a", "mcp", "mcpserver", "server-1")
+	require.NoError(t, err)
+	assert.Nil(t, gotA)
+	gotB, err = store.Get("ns-b", "mcp", "mcpserver", "server-1")
+	require.NoError(t, err)
+	assert.NotNil(t, gotB)
 }
 
 func TestOverlayStore_NilFields(t *testing.T) {
@@ -183,7 +240,7 @@ func TestOverlayStore_NilFields(t *testing.T) {
 	}
 	require.NoError(t, store.Upsert(record))
 
-	got, err := store.Get("mcp", "mcpserver", "server-1")
+	got, err := store.Get("default", "mcp", "mcpserver", "server-1")
 	require.NoError(t, err)
 	require.NotNil(t, got)
 	assert.Nil(t, got.Tags)
@@ -209,7 +266,7 @@ func TestBuiltinActionHandler_Tag(t *testing.T) {
 		assert.Equal(t, "completed", result.Status)
 
 		// Verify overlay.
-		overlay, err := store.Get("mcp", "mcpserver", "server-1")
+		overlay, err := store.Get("default", "mcp", "mcpserver", "server-1")
 		require.NoError(t, err)
 		require.NotNil(t, overlay)
 		assert.Equal(t, StringSlice{"production", "v2"}, overlay.Tags)
@@ -228,7 +285,7 @@ func TestBuiltinActionHandler_Tag(t *testing.T) {
 		assert.Equal(t, "dry-run", result.Status)
 
 		// Should NOT create an overlay.
-		overlay, err := store.Get("mcp", "mcpserver", "server-2")
+		overlay, err := store.Get("default", "mcp", "mcpserver", "server-2")
 		require.NoError(t, err)
 		assert.Nil(t, overlay)
 	})
@@ -262,7 +319,7 @@ func TestBuiltinActionHandler_Annotate(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "completed", result.Status)
 
-		overlay, err := store.Get("mcp", "mcpserver", "server-1")
+		overlay, err := store.Get("default", "mcp", "mcpserver", "server-1")
 		require.NoError(t, err)
 		require.NotNil(t, overlay)
 		assert.Equal(t, "ml-platform", overlay.Annotations["team"])
@@ -281,7 +338,7 @@ func TestBuiltinActionHandler_Annotate(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "completed", result.Status)
 
-		overlay, err := store.Get("mcp", "mcpserver", "server-1")
+		overlay, err := store.Get("default", "mcp", "mcpserver", "server-1")
 		require.NoError(t, err)
 		require.NotNil(t, overlay)
 		// Both annotations should exist.
@@ -301,7 +358,7 @@ func TestBuiltinActionHandler_Annotate(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "dry-run", result.Status)
 
-		overlay, err := store.Get("mcp", "mcpserver", "new-server")
+		overlay, err := store.Get("default", "mcp", "mcpserver", "new-server")
 		require.NoError(t, err)
 		assert.Nil(t, overlay)
 	})
@@ -322,7 +379,7 @@ func TestBuiltinActionHandler_Deprecate(t *testing.T) {
 		assert.Equal(t, "completed", result.Status)
 		assert.Equal(t, "deprecated", result.Data["lifecycle"])
 
-		overlay, err := store.Get("mcp", "mcpserver", "server-1")
+		overlay, err := store.Get("default", "mcp", "mcpserver", "server-1")
 		require.NoError(t, err)
 		require.NotNil(t, overlay)
 		assert.Equal(t, "deprecated", overlay.Lifecycle)
@@ -351,7 +408,7 @@ func TestBuiltinActionHandler_Deprecate(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "dry-run", result.Status)
 
-		overlay, err := store.Get("mcp", "mcpserver", "server-3")
+		overlay, err := store.Get("default", "mcp", "mcpserver", "server-3")
 		require.NoError(t, err)
 		assert.Nil(t, overlay)
 	})

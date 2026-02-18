@@ -6,6 +6,8 @@ metadata:
   labels:
     app: catalog-server
 spec:
+  # Single-replica default. For HA set replicas >= 2 and enable
+  # leader election + migration locking via env vars below.
   replicas: 1
   selector:
     matchLabels:
@@ -21,6 +23,33 @@ spec:
           image: catalog-server:latest
           ports:
             - containerPort: 8080
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            # HA: Leader election (uncomment for multi-replica deployments).
+            # Requires coordination.k8s.io/leases RBAC (see rbac.yaml).
+            # - name: CATALOG_LEADER_ELECTION_ENABLED
+            #   value: "true"
+            # - name: CATALOG_LEADER_LEASE_NAME
+            #   value: "catalog-server-leader"
+            # - name: CATALOG_LEADER_LEASE_NAMESPACE
+            #   valueFrom:
+            #     fieldRef:
+            #       fieldPath: metadata.namespace
+            # - name: CATALOG_LEADER_IDENTITY
+            #   valueFrom:
+            #     fieldRef:
+            #       fieldPath: metadata.name
+            # HA: Migration locking (uncomment for multi-replica deployments).
+            # Uses pg_advisory_lock on PostgreSQL, table-based lock otherwise.
+            # - name: CATALOG_MIGRATION_LOCK_ENABLED
+            #   value: "true"
           startupProbe:
             httpGet:
               path: /readyz
@@ -46,3 +75,13 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "500m"
+---
+# HA overlay: apply with kustomize or manually set replicas: 3 and
+# uncomment the HA env vars above.
+# apiVersion: apps/v1
+# kind: Deployment
+# metadata:
+#   name: catalog-server
+#   namespace: catalog-system
+# spec:
+#   replicas: 3

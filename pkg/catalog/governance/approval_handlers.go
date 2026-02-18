@@ -9,12 +9,15 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+
+	"github.com/kubeflow/model-registry/pkg/tenancy"
 )
 
 // listApprovalsHandler returns a handler that lists approval requests with optional filtering.
 // GET /api/governance/v1alpha1/approvals?status=pending&assetUid=...&pageSize=20&pageToken=...
 func listApprovalsHandler(approvalStore *ApprovalStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		ns := tenancy.NamespaceFromContext(r.Context())
 		status := ApprovalStatus(r.URL.Query().Get("status"))
 		assetUID := r.URL.Query().Get("assetUid")
 
@@ -26,7 +29,7 @@ func listApprovalsHandler(approvalStore *ApprovalStore) http.HandlerFunc {
 		}
 		pageToken := r.URL.Query().Get("pageToken")
 
-		records, nextToken, total, err := approvalStore.List(status, assetUID, pageSize, pageToken)
+		records, nextToken, total, err := approvalStore.List(ns, status, assetUID, pageSize, pageToken)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to list approvals: %v", err))
 			return
@@ -128,6 +131,7 @@ func submitDecisionHandler(
 		// Audit the decision.
 		_ = auditStore.Append(&AuditEventRecord{
 			ID:            uuid.New().String(),
+			Namespace:     req.Namespace,
 			CorrelationID: id,
 			EventType:     "governance.approval.decision",
 			Actor:         actor,
@@ -160,12 +164,13 @@ func submitDecisionHandler(
 			}
 
 			result, execErr := lifecycleHandler.executeTransition(
-				req.Plugin, req.AssetKind, req.AssetName, req.Requester, params, req.Reason,
+				req.Namespace, req.Plugin, req.AssetKind, req.AssetName, req.Requester, params, req.Reason,
 			)
 			if execErr != nil {
 				// The approval succeeded but execution failed; record this for debugging.
 				_ = auditStore.Append(&AuditEventRecord{
 					ID:            uuid.New().String(),
+					Namespace:     req.Namespace,
 					CorrelationID: id,
 					EventType:     "governance.approval.execution_failed",
 					Actor:         "system",
@@ -195,6 +200,7 @@ func submitDecisionHandler(
 
 			_ = auditStore.Append(&AuditEventRecord{
 				ID:            uuid.New().String(),
+				Namespace:     req.Namespace,
 				CorrelationID: id,
 				EventType:     "governance.approval.denied",
 				Actor:         actor,
@@ -255,6 +261,7 @@ func cancelApprovalHandler(approvalStore *ApprovalStore, auditStore *AuditStore)
 
 		_ = auditStore.Append(&AuditEventRecord{
 			ID:            uuid.New().String(),
+			Namespace:     req.Namespace,
 			CorrelationID: id,
 			EventType:     "governance.approval.canceled",
 			Actor:         actor,

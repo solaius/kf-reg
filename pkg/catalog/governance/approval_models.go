@@ -24,6 +24,7 @@ const (
 // ApprovalRequestRecord is a GORM model for a pending or resolved approval request.
 type ApprovalRequestRecord struct {
 	ID             string         `gorm:"primaryKey;column:id;type:varchar(36)"`
+	Namespace      string         `gorm:"column:namespace;index:idx_approval_ns;default:default;not null"`
 	AssetUID       string         `gorm:"column:asset_uid;index:idx_approval_asset;not null"`
 	Plugin         string         `gorm:"column:plugin;not null"`
 	AssetKind      string         `gorm:"column:asset_kind;not null"`

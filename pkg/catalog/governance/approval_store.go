@@ -29,7 +29,11 @@ func (s *ApprovalStore) AutoMigrate() error {
 }
 
 // Create inserts a new approval request.
+// If Namespace is empty, it defaults to "default".
 func (s *ApprovalStore) Create(req *ApprovalRequestRecord) error {
+	if req.Namespace == "" {
+		req.Namespace = "default"
+	}
 	if err := s.db.Create(req).Error; err != nil {
 		return fmt.Errorf("create approval request: %w", err)
 	}
@@ -54,8 +58,12 @@ func (s *ApprovalStore) Get(id string) (*ApprovalRequestRecord, []ApprovalDecisi
 	return &req, decisions, nil
 }
 
-// List returns paginated approval requests, optionally filtered by status and/or asset UID.
-func (s *ApprovalStore) List(status ApprovalStatus, assetUID string, pageSize int, pageToken string) ([]ApprovalRequestRecord, string, int, error) {
+// List returns paginated approval requests within a namespace,
+// optionally filtered by status and/or asset UID.
+func (s *ApprovalStore) List(namespace string, status ApprovalStatus, assetUID string, pageSize int, pageToken string) ([]ApprovalRequestRecord, string, int, error) {
+	if namespace == "" {
+		namespace = "default"
+	}
 	if pageSize <= 0 {
 		pageSize = 20
 	}
@@ -63,7 +71,7 @@ func (s *ApprovalStore) List(status ApprovalStatus, assetUID string, pageSize in
 		pageSize = 100
 	}
 
-	baseQuery := s.db.Model(&ApprovalRequestRecord{})
+	baseQuery := s.db.Model(&ApprovalRequestRecord{}).Where("namespace = ?", namespace)
 	if status != "" {
 		baseQuery = baseQuery.Where("status = ?", string(status))
 	}
@@ -76,7 +84,7 @@ func (s *ApprovalStore) List(status ApprovalStatus, assetUID string, pageSize in
 		return nil, "", 0, fmt.Errorf("count approval requests: %w", err)
 	}
 
-	query := s.db.Order("created_at DESC").Limit(pageSize + 1)
+	query := s.db.Where("namespace = ?", namespace).Order("created_at DESC").Limit(pageSize + 1)
 	if status != "" {
 		query = query.Where("status = ?", string(status))
 	}

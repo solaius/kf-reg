@@ -47,9 +47,9 @@ func TestSaveAndGetRefreshStatus(t *testing.T) {
 		Duration:       150 * time.Millisecond,
 	}
 
-	srv.saveRefreshStatus("mcp", "src1", result)
+	srv.saveRefreshStatus("default", "mcp", "src1", result)
 
-	record := srv.getRefreshStatus("mcp", "src1")
+	record := srv.getRefreshStatus("default", "mcp", "src1")
 	require.NotNil(t, record)
 	assert.Equal(t, "src1", record.SourceID)
 	assert.Equal(t, "mcp", record.PluginName)
@@ -71,9 +71,9 @@ func TestSaveRefreshStatus_Error(t *testing.T) {
 		Error:          "connection refused",
 	}
 
-	srv.saveRefreshStatus("mcp", "src1", result)
+	srv.saveRefreshStatus("default", "mcp", "src1", result)
 
-	record := srv.getRefreshStatus("mcp", "src1")
+	record := srv.getRefreshStatus("default", "mcp", "src1")
 	require.NotNil(t, record)
 	assert.Equal(t, "error", record.LastRefreshStatus)
 	assert.Equal(t, "connection refused", record.LastError)
@@ -84,26 +84,26 @@ func TestSaveRefreshStatus_Upsert(t *testing.T) {
 	srv := newTestServer(t)
 
 	// First save.
-	srv.saveRefreshStatus("mcp", "src1", &RefreshResult{
+	srv.saveRefreshStatus("default", "mcp", "src1", &RefreshResult{
 		SourceID:       "src1",
 		EntitiesLoaded: 3,
 		Duration:       100 * time.Millisecond,
 	})
 
 	// Second save should update, not create a duplicate.
-	srv.saveRefreshStatus("mcp", "src1", &RefreshResult{
+	srv.saveRefreshStatus("default", "mcp", "src1", &RefreshResult{
 		SourceID:       "src1",
 		EntitiesLoaded: 7,
 		Duration:       200 * time.Millisecond,
 	})
 
-	record := srv.getRefreshStatus("mcp", "src1")
+	record := srv.getRefreshStatus("default", "mcp", "src1")
 	require.NotNil(t, record)
 	assert.Equal(t, 7, record.EntitiesLoaded)
 	assert.Equal(t, int64(200), record.DurationMs)
 
 	// Verify only one record exists.
-	records := srv.listRefreshStatuses("mcp")
+	records := srv.listRefreshStatuses("default", "mcp")
 	assert.Len(t, records, 1)
 }
 
@@ -111,34 +111,34 @@ func TestListRefreshStatuses(t *testing.T) {
 	srv := newTestServer(t)
 
 	// Save statuses for two sources.
-	srv.saveRefreshStatus("mcp", "src1", &RefreshResult{
+	srv.saveRefreshStatus("default", "mcp", "src1", &RefreshResult{
 		SourceID:       "src1",
 		EntitiesLoaded: 3,
 		Duration:       100 * time.Millisecond,
 	})
-	srv.saveRefreshStatus("mcp", "src2", &RefreshResult{
+	srv.saveRefreshStatus("default", "mcp", "src2", &RefreshResult{
 		SourceID:       "src2",
 		EntitiesLoaded: 5,
 		Duration:       200 * time.Millisecond,
 	})
 	// Save for a different plugin - should not appear.
-	srv.saveRefreshStatus("other", "src3", &RefreshResult{
+	srv.saveRefreshStatus("default", "other", "src3", &RefreshResult{
 		SourceID:       "src3",
 		EntitiesLoaded: 1,
 		Duration:       50 * time.Millisecond,
 	})
 
-	records := srv.listRefreshStatuses("mcp")
+	records := srv.listRefreshStatuses("default", "mcp")
 	assert.Len(t, records, 2)
 
-	otherRecords := srv.listRefreshStatuses("other")
+	otherRecords := srv.listRefreshStatuses("default", "other")
 	assert.Len(t, otherRecords, 1)
 }
 
 func TestGetRefreshStatus_NotFound(t *testing.T) {
 	srv := newTestServer(t)
 
-	record := srv.getRefreshStatus("mcp", "nonexistent")
+	record := srv.getRefreshStatus("default", "mcp", "nonexistent")
 	assert.Nil(t, record)
 }
 
@@ -147,38 +147,38 @@ func TestRefreshStatus_NilDBIsNoop(t *testing.T) {
 	srv := NewServer(cfg, nil, nil, slog.Default()) // no DB
 
 	// These should not panic.
-	srv.saveRefreshStatus("mcp", "src1", &RefreshResult{EntitiesLoaded: 1})
-	assert.Nil(t, srv.getRefreshStatus("mcp", "src1"))
-	assert.Nil(t, srv.listRefreshStatuses("mcp"))
+	srv.saveRefreshStatus("default", "mcp", "src1", &RefreshResult{EntitiesLoaded: 1})
+	assert.Nil(t, srv.getRefreshStatus("default", "mcp", "src1"))
+	assert.Nil(t, srv.listRefreshStatuses("default", "mcp"))
 }
 
 func TestRefreshStatus_NilResultIsNoop(t *testing.T) {
 	srv := newTestServer(t)
 
 	// Saving nil result should not panic or create a record.
-	srv.saveRefreshStatus("mcp", "src1", nil)
-	assert.Nil(t, srv.getRefreshStatus("mcp", "src1"))
+	srv.saveRefreshStatus("default", "mcp", "src1", nil)
+	assert.Nil(t, srv.getRefreshStatus("default", "mcp", "src1"))
 }
 
 func TestDeleteRefreshStatus(t *testing.T) {
 	srv := newTestServer(t)
 
 	// Save a record, then delete it.
-	srv.saveRefreshStatus("mcp", "src1", &RefreshResult{
+	srv.saveRefreshStatus("default", "mcp", "src1", &RefreshResult{
 		SourceID:       "src1",
 		EntitiesLoaded: 5,
 		Duration:       100 * time.Millisecond,
 	})
 
 	// Verify it exists.
-	record := srv.getRefreshStatus("mcp", "src1")
+	record := srv.getRefreshStatus("default", "mcp", "src1")
 	require.NotNil(t, record)
 
 	// Delete it.
-	srv.deleteRefreshStatus("mcp", "src1")
+	srv.deleteRefreshStatus("default", "mcp", "src1")
 
 	// Verify it's gone.
-	record = srv.getRefreshStatus("mcp", "src1")
+	record = srv.getRefreshStatus("default", "mcp", "src1")
 	assert.Nil(t, record)
 }
 
@@ -186,10 +186,10 @@ func TestDeleteRefreshStatus_NonExistent(t *testing.T) {
 	srv := newTestServer(t)
 
 	// Deleting a non-existent record should not error.
-	srv.deleteRefreshStatus("mcp", "nonexistent")
+	srv.deleteRefreshStatus("default", "mcp", "nonexistent")
 
 	// Verify no records exist.
-	records := srv.listRefreshStatuses("mcp")
+	records := srv.listRefreshStatuses("default", "mcp")
 	assert.Empty(t, records)
 }
 
@@ -198,7 +198,7 @@ func TestDeleteRefreshStatus_NilDB(t *testing.T) {
 	srv := NewServer(cfg, nil, nil, slog.Default()) // no DB
 
 	// Should not panic.
-	srv.deleteRefreshStatus("mcp", "src1")
+	srv.deleteRefreshStatus("default", "mcp", "src1")
 	srv.deleteAllRefreshStatuses("mcp")
 }
 
@@ -206,17 +206,17 @@ func TestDeleteAllRefreshStatuses(t *testing.T) {
 	srv := newTestServer(t)
 
 	// Save records for two different plugins.
-	srv.saveRefreshStatus("mcp", "src1", &RefreshResult{
+	srv.saveRefreshStatus("default", "mcp", "src1", &RefreshResult{
 		SourceID:       "src1",
 		EntitiesLoaded: 3,
 		Duration:       100 * time.Millisecond,
 	})
-	srv.saveRefreshStatus("mcp", "src2", &RefreshResult{
+	srv.saveRefreshStatus("default", "mcp", "src2", &RefreshResult{
 		SourceID:       "src2",
 		EntitiesLoaded: 5,
 		Duration:       200 * time.Millisecond,
 	})
-	srv.saveRefreshStatus("other", "src3", &RefreshResult{
+	srv.saveRefreshStatus("default", "other", "src3", &RefreshResult{
 		SourceID:       "src3",
 		EntitiesLoaded: 1,
 		Duration:       50 * time.Millisecond,
@@ -226,11 +226,11 @@ func TestDeleteAllRefreshStatuses(t *testing.T) {
 	srv.deleteAllRefreshStatuses("mcp")
 
 	// Verify "mcp" records are gone.
-	records := srv.listRefreshStatuses("mcp")
+	records := srv.listRefreshStatuses("default", "mcp")
 	assert.Empty(t, records)
 
 	// Verify "other" plugin records are untouched.
-	otherRecords := srv.listRefreshStatuses("other")
+	otherRecords := srv.listRefreshStatuses("default", "other")
 	assert.Len(t, otherRecords, 1)
 	assert.Equal(t, "src3", otherRecords[0].SourceID)
 }
@@ -239,14 +239,14 @@ func TestDeleteSourceHandler_CleansUpRefreshStatus(t *testing.T) {
 	srv := newTestServer(t)
 
 	// Pre-populate a refresh status record for the source.
-	srv.saveRefreshStatus("test", "src1", &RefreshResult{
+	srv.saveRefreshStatus("default", "test", "src1", &RefreshResult{
 		SourceID:       "src1",
 		EntitiesLoaded: 10,
 		Duration:       300 * time.Millisecond,
 	})
 
 	// Verify the record exists.
-	record := srv.getRefreshStatus("test", "src1")
+	record := srv.getRefreshStatus("default", "test", "src1")
 	require.NotNil(t, record)
 
 	p := &mgmtTestPlugin{}
@@ -261,7 +261,7 @@ func TestDeleteSourceHandler_CleansUpRefreshStatus(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rr.Code)
 
 	// Verify the refresh status record was cleaned up.
-	record = srv.getRefreshStatus("test", "src1")
+	record = srv.getRefreshStatus("default", "test", "src1")
 	assert.Nil(t, record, "refresh status should be deleted when source is deleted")
 }
 
@@ -271,6 +271,7 @@ func TestSourcesListHandler_EnrichedWithPersistedStatus(t *testing.T) {
 	// Pre-populate refresh status in the DB.
 	refreshTime := time.Date(2025, 1, 15, 10, 30, 0, 0, time.UTC)
 	srv.db.Create(&RefreshStatusRecord{
+		Namespace:          "default",
 		SourceID:           "src1",
 		PluginName:         "test",
 		LastRefreshTime:    &refreshTime,
@@ -343,7 +344,7 @@ func TestRefreshSourceHandler_PersistsStatus(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rr.Code)
 
 	// Verify the refresh status was persisted.
-	record := srv.getRefreshStatus("test", "src1")
+	record := srv.getRefreshStatus("default", "test", "src1")
 	require.NotNil(t, record, "refresh status should be persisted after refresh")
 	assert.Equal(t, "success", record.LastRefreshStatus)
 	assert.Equal(t, 5, record.EntitiesLoaded)
@@ -379,7 +380,7 @@ func TestApplyHandler_RefreshAfterApply_PersistsStatus(t *testing.T) {
 	require.NotNil(t, result.RefreshResult)
 
 	// Verify the refresh status was persisted.
-	record := srv.getRefreshStatus("test", "src1")
+	record := srv.getRefreshStatus("default", "test", "src1")
 	require.NotNil(t, record, "refresh status should be persisted after apply with refreshAfterApply")
 	assert.Equal(t, "success", record.LastRefreshStatus)
 	assert.Equal(t, 5, record.EntitiesLoaded)
@@ -398,7 +399,7 @@ func TestRefreshAllHandler_PersistsStatus(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rr.Code)
 
 	// Verify the refresh status was persisted under the "_all" key.
-	record := srv.getRefreshStatus("test", "_all")
+	record := srv.getRefreshStatus("default", "test", "_all")
 	require.NotNil(t, record, "refresh-all status should be persisted")
 	assert.Equal(t, "success", record.LastRefreshStatus)
 	assert.Equal(t, 10, record.EntitiesLoaded)
@@ -462,13 +463,13 @@ func TestServerInit_AutoMigratesRefreshStatus(t *testing.T) {
 	require.NoError(t, err)
 
 	// The table should exist and we should be able to insert.
-	server.saveRefreshStatus("test", "src1", &RefreshResult{
+	server.saveRefreshStatus("default", "test", "src1", &RefreshResult{
 		SourceID:       "src1",
 		EntitiesLoaded: 3,
 		Duration:       100 * time.Millisecond,
 	})
 
-	record := server.getRefreshStatus("test", "src1")
+	record := server.getRefreshStatus("default", "test", "src1")
 	require.NotNil(t, record)
 	assert.Equal(t, 3, record.EntitiesLoaded)
 
@@ -479,17 +480,17 @@ func TestCleanupPluginData(t *testing.T) {
 	srv := newTestServer(t)
 
 	// Save records for two different plugins.
-	srv.saveRefreshStatus("mcp", "src1", &RefreshResult{
+	srv.saveRefreshStatus("default", "mcp", "src1", &RefreshResult{
 		SourceID:       "src1",
 		EntitiesLoaded: 3,
 		Duration:       100 * time.Millisecond,
 	})
-	srv.saveRefreshStatus("mcp", "src2", &RefreshResult{
+	srv.saveRefreshStatus("default", "mcp", "src2", &RefreshResult{
 		SourceID:       "src2",
 		EntitiesLoaded: 5,
 		Duration:       200 * time.Millisecond,
 	})
-	srv.saveRefreshStatus("other", "src3", &RefreshResult{
+	srv.saveRefreshStatus("default", "other", "src3", &RefreshResult{
 		SourceID:       "src3",
 		EntitiesLoaded: 1,
 		Duration:       50 * time.Millisecond,
@@ -499,11 +500,11 @@ func TestCleanupPluginData(t *testing.T) {
 	srv.CleanupPluginData("mcp")
 
 	// Verify "mcp" records are gone.
-	records := srv.listRefreshStatuses("mcp")
+	records := srv.listRefreshStatuses("default", "mcp")
 	assert.Empty(t, records)
 
 	// Verify "other" plugin records are untouched.
-	otherRecords := srv.listRefreshStatuses("other")
+	otherRecords := srv.listRefreshStatuses("default", "other")
 	assert.Len(t, otherRecords, 1)
 	assert.Equal(t, "src3", otherRecords[0].SourceID)
 }
@@ -524,7 +525,7 @@ func TestRefreshStatusSurvivesServerRestart(t *testing.T) {
 
 	// First server instance saves a refresh status.
 	srv1 := NewServer(cfg, nil, db, slog.Default())
-	srv1.saveRefreshStatus("mcp", "src1", &RefreshResult{
+	srv1.saveRefreshStatus("default", "mcp", "src1", &RefreshResult{
 		SourceID:       "src1",
 		EntitiesLoaded: 10,
 		Duration:       300 * time.Millisecond,
@@ -532,9 +533,91 @@ func TestRefreshStatusSurvivesServerRestart(t *testing.T) {
 
 	// Second server instance (simulating restart) should see the same data.
 	srv2 := NewServer(cfg, nil, db, slog.Default())
-	record := srv2.getRefreshStatus("mcp", "src1")
+	record := srv2.getRefreshStatus("default", "mcp", "src1")
 	require.NotNil(t, record, "refresh status should survive server restart")
 	assert.Equal(t, 10, record.EntitiesLoaded)
 	assert.Equal(t, "success", record.LastRefreshStatus)
 	assert.Contains(t, record.LastRefreshSummary, "Loaded 10 entities")
+}
+
+func TestRefreshStatus_TenantIsolation(t *testing.T) {
+	srv := newTestServer(t)
+
+	// Save records in two different namespaces for the same plugin and source.
+	srv.saveRefreshStatus("ns-a", "mcp", "src1", &RefreshResult{
+		SourceID:       "src1",
+		EntitiesLoaded: 5,
+		Duration:       100 * time.Millisecond,
+	})
+	srv.saveRefreshStatus("ns-b", "mcp", "src1", &RefreshResult{
+		SourceID:       "src1",
+		EntitiesLoaded: 10,
+		Duration:       200 * time.Millisecond,
+	})
+
+	// Each namespace should see only its own record.
+	recordA := srv.getRefreshStatus("ns-a", "mcp", "src1")
+	require.NotNil(t, recordA)
+	assert.Equal(t, 5, recordA.EntitiesLoaded)
+	assert.Equal(t, "ns-a", recordA.Namespace)
+
+	recordB := srv.getRefreshStatus("ns-b", "mcp", "src1")
+	require.NotNil(t, recordB)
+	assert.Equal(t, 10, recordB.EntitiesLoaded)
+	assert.Equal(t, "ns-b", recordB.Namespace)
+
+	// List should be scoped per namespace.
+	recordsA := srv.listRefreshStatuses("ns-a", "mcp")
+	assert.Len(t, recordsA, 1)
+
+	recordsB := srv.listRefreshStatuses("ns-b", "mcp")
+	assert.Len(t, recordsB, 1)
+
+	// Delete in ns-a should not affect ns-b.
+	srv.deleteRefreshStatus("ns-a", "mcp", "src1")
+	assert.Nil(t, srv.getRefreshStatus("ns-a", "mcp", "src1"))
+	assert.NotNil(t, srv.getRefreshStatus("ns-b", "mcp", "src1"))
+}
+
+func TestRefreshStatus_MigrationIdempotent(t *testing.T) {
+	db := newTestDB(t) // already migrates RefreshStatusRecord
+
+	// Running AutoMigrate a second time should not error.
+	err := db.AutoMigrate(&RefreshStatusRecord{})
+	require.NoError(t, err, "AutoMigrate should be idempotent")
+
+	// Verify the table still works after double migration.
+	cfg := &CatalogSourcesConfig{Catalogs: map[string]CatalogSection{}}
+	srv := NewServer(cfg, nil, db, slog.Default())
+	srv.saveRefreshStatus("default", "mcp", "src1", &RefreshResult{
+		SourceID:       "src1",
+		EntitiesLoaded: 3,
+		Duration:       100 * time.Millisecond,
+	})
+
+	record := srv.getRefreshStatus("default", "mcp", "src1")
+	require.NotNil(t, record)
+	assert.Equal(t, 3, record.EntitiesLoaded)
+}
+
+func TestRefreshStatus_EmptyNamespaceDefaultsToDefault(t *testing.T) {
+	srv := newTestServer(t)
+
+	// Save with empty namespace should default to "default".
+	srv.saveRefreshStatus("", "mcp", "src1", &RefreshResult{
+		SourceID:       "src1",
+		EntitiesLoaded: 7,
+		Duration:       100 * time.Millisecond,
+	})
+
+	// Should be retrievable with explicit "default" namespace.
+	record := srv.getRefreshStatus("default", "mcp", "src1")
+	require.NotNil(t, record)
+	assert.Equal(t, "default", record.Namespace)
+	assert.Equal(t, 7, record.EntitiesLoaded)
+
+	// Should also be retrievable with empty namespace (defaults to "default").
+	record2 := srv.getRefreshStatus("", "mcp", "src1")
+	require.NotNil(t, record2)
+	assert.Equal(t, 7, record2.EntitiesLoaded)
 }

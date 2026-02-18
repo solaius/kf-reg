@@ -9,6 +9,7 @@ import (
 
 // RefreshStatusRecord persists refresh metadata so it survives server restarts.
 type RefreshStatusRecord struct {
+	Namespace          string     `gorm:"primaryKey;column:namespace;default:default"`
 	SourceID           string     `gorm:"primaryKey;column:source_id"`
 	PluginName         string     `gorm:"column:plugin_name;index"`
 	LastRefreshTime    *time.Time `gorm:"column:last_refresh_time"`
@@ -28,9 +29,13 @@ func (RefreshStatusRecord) TableName() string {
 
 // saveRefreshStatus persists refresh results to the database.
 // If the DB is nil this is a no-op.
-func (s *Server) saveRefreshStatus(pluginName, sourceID string, result *RefreshResult) {
+func (s *Server) saveRefreshStatus(namespace, pluginName, sourceID string, result *RefreshResult) {
 	if s.db == nil || result == nil {
 		return
+	}
+
+	if namespace == "" {
+		namespace = "default"
 	}
 
 	now := time.Now()
@@ -42,6 +47,7 @@ func (s *Server) saveRefreshStatus(pluginName, sourceID string, result *RefreshR
 	summary := formatRefreshSummary(result)
 
 	record := RefreshStatusRecord{
+		Namespace:          namespace,
 		SourceID:           sourceID,
 		PluginName:         pluginName,
 		LastRefreshTime:    &now,
@@ -55,36 +61,44 @@ func (s *Server) saveRefreshStatus(pluginName, sourceID string, result *RefreshR
 
 	// Upsert: create or update.
 	if err := s.db.Save(&record).Error; err != nil {
-		s.logger.Error("failed to save refresh status", "plugin", pluginName, "source", sourceID, "error", err)
+		s.logger.Error("failed to save refresh status", "namespace", namespace, "plugin", pluginName, "source", sourceID, "error", err)
 	}
 }
 
 // getRefreshStatus loads a single refresh status record from the database.
-func (s *Server) getRefreshStatus(pluginName, sourceID string) *RefreshStatusRecord {
+func (s *Server) getRefreshStatus(namespace, pluginName, sourceID string) *RefreshStatusRecord {
 	if s.db == nil {
 		return nil
 	}
 
+	if namespace == "" {
+		namespace = "default"
+	}
+
 	var record RefreshStatusRecord
-	err := s.db.Where("plugin_name = ? AND source_id = ?", pluginName, sourceID).First(&record).Error
+	err := s.db.Where("namespace = ? AND plugin_name = ? AND source_id = ?", namespace, pluginName, sourceID).First(&record).Error
 	if err != nil {
 		if err != gorm.ErrRecordNotFound {
-			s.logger.Error("failed to load refresh status", "plugin", pluginName, "source", sourceID, "error", err)
+			s.logger.Error("failed to load refresh status", "namespace", namespace, "plugin", pluginName, "source", sourceID, "error", err)
 		}
 		return nil
 	}
 	return &record
 }
 
-// listRefreshStatuses loads all refresh status records for a plugin.
-func (s *Server) listRefreshStatuses(pluginName string) []RefreshStatusRecord {
+// listRefreshStatuses loads all refresh status records for a plugin within a namespace.
+func (s *Server) listRefreshStatuses(namespace, pluginName string) []RefreshStatusRecord {
 	if s.db == nil {
 		return nil
 	}
 
+	if namespace == "" {
+		namespace = "default"
+	}
+
 	var records []RefreshStatusRecord
-	if err := s.db.Where("plugin_name = ?", pluginName).Find(&records).Error; err != nil {
-		s.logger.Error("failed to list refresh statuses", "plugin", pluginName, "error", err)
+	if err := s.db.Where("namespace = ? AND plugin_name = ?", namespace, pluginName).Find(&records).Error; err != nil {
+		s.logger.Error("failed to list refresh statuses", "namespace", namespace, "plugin", pluginName, "error", err)
 		return nil
 	}
 	return records
@@ -92,17 +106,20 @@ func (s *Server) listRefreshStatuses(pluginName string) []RefreshStatusRecord {
 
 // deleteRefreshStatus removes the refresh status record for a specific source.
 // If the DB is nil this is a no-op.
-func (s *Server) deleteRefreshStatus(pluginName, sourceID string) {
+func (s *Server) deleteRefreshStatus(namespace, pluginName, sourceID string) {
 	if s.db == nil {
 		return
 	}
-	if err := s.db.Where("plugin_name = ? AND source_id = ?", pluginName, sourceID).Delete(&RefreshStatusRecord{}).Error; err != nil {
-		s.logger.Error("failed to delete refresh status", "plugin", pluginName, "source", sourceID, "error", err)
+	if namespace == "" {
+		namespace = "default"
+	}
+	if err := s.db.Where("namespace = ? AND plugin_name = ? AND source_id = ?", namespace, pluginName, sourceID).Delete(&RefreshStatusRecord{}).Error; err != nil {
+		s.logger.Error("failed to delete refresh status", "namespace", namespace, "plugin", pluginName, "source", sourceID, "error", err)
 	}
 }
 
 // deleteAllRefreshStatuses removes all refresh status records for a plugin.
-// If the DB is nil this is a no-op.
+// If the DB is nil this is a no-op. Deletes across all namespaces.
 func (s *Server) deleteAllRefreshStatuses(pluginName string) {
 	if s.db == nil {
 		return

@@ -76,10 +76,11 @@ func (m JSONAny) Value() (driver.Value, error) {
 // AssetGovernanceRecord stores governance metadata for an asset.
 type AssetGovernanceRecord struct {
 	ID                      string          `gorm:"primaryKey;column:id;type:varchar(36)"`
-	Plugin                  string          `gorm:"column:plugin;index:idx_gov_asset,priority:1;not null"`
-	AssetKind               string          `gorm:"column:asset_kind;index:idx_gov_asset,priority:2;not null"`
-	AssetName               string          `gorm:"column:asset_name;index:idx_gov_asset,priority:3;not null"`
-	AssetUID                string          `gorm:"column:asset_uid;uniqueIndex;not null"`
+	Namespace               string          `gorm:"column:namespace;index:idx_gov_asset,priority:1;uniqueIndex:idx_gov_ns_uid,priority:1;default:default;not null"`
+	Plugin                  string          `gorm:"column:plugin;index:idx_gov_asset,priority:2;not null"`
+	AssetKind               string          `gorm:"column:asset_kind;index:idx_gov_asset,priority:3;not null"`
+	AssetName               string          `gorm:"column:asset_name;index:idx_gov_asset,priority:4;not null"`
+	AssetUID                string          `gorm:"column:asset_uid;uniqueIndex:idx_gov_ns_uid,priority:2;not null"`
 	OwnerPrincipal          string          `gorm:"column:owner_principal"`
 	OwnerDisplayName        string          `gorm:"column:owner_display_name"`
 	OwnerEmail              string          `gorm:"column:owner_email"`
@@ -109,19 +110,26 @@ func (AssetGovernanceRecord) TableName() string { return "asset_governance" }
 
 // AuditEventRecord is an immutable audit log entry.
 type AuditEventRecord struct {
-	ID            string    `gorm:"primaryKey;column:id;type:varchar(36)"`
-	CorrelationID string    `gorm:"column:correlation_id;index"`
-	EventType     string    `gorm:"column:event_type;index:idx_audit_type_time,priority:1;not null"`
-	Actor         string    `gorm:"column:actor;index:idx_audit_actor_time,priority:1;not null"`
-	AssetUID      string    `gorm:"column:asset_uid;index:idx_audit_asset_time,priority:1;not null"`
-	VersionID     string    `gorm:"column:version_id"`
-	Action        string    `gorm:"column:action"`
-	Outcome       string    `gorm:"column:outcome;not null"` // success, failure, denied
-	Reason        string    `gorm:"column:reason"`
-	OldValue      JSONAny   `gorm:"column:old_value;type:text"`
-	NewValue      JSONAny   `gorm:"column:new_value;type:text"`
-	EventMetadata JSONAny   `gorm:"column:metadata;type:text"`
-	CreatedAt     time.Time `gorm:"column:created_at;index:idx_audit_type_time,priority:2;index:idx_audit_actor_time,priority:2;index:idx_audit_asset_time,priority:2;autoCreateTime"`
+	ID            string          `gorm:"primaryKey;column:id;type:varchar(36)"`
+	Namespace     string          `gorm:"column:namespace;index:idx_audit_ns_time,priority:1;default:default;not null"`
+	CorrelationID string          `gorm:"column:correlation_id;index"`
+	EventType     string          `gorm:"column:event_type;index:idx_audit_type_time,priority:1;not null"`
+	Actor         string          `gorm:"column:actor;index:idx_audit_actor_time,priority:1;not null"`
+	AssetUID      string          `gorm:"column:asset_uid;index:idx_audit_asset_time,priority:1"`
+	VersionID     string          `gorm:"column:version_id"`
+	Action        string          `gorm:"column:action"`
+	Outcome       string          `gorm:"column:outcome;not null"` // success, failure, denied
+	Reason        string          `gorm:"column:reason"`
+	OldValue      JSONAny         `gorm:"column:old_value;type:text"`
+	NewValue      JSONAny         `gorm:"column:new_value;type:text"`
+	EventMetadata JSONAny         `gorm:"column:metadata;type:text"`
+	RequestID     string          `gorm:"column:request_id;index"`
+	Plugin        string          `gorm:"column:plugin;index:idx_audit_plugin_time,priority:1"`
+	ResourceType  string          `gorm:"column:resource_type"`
+	ResourceIDs   JSONStringSlice `gorm:"column:resource_ids;type:text"`
+	ActionVerb    string          `gorm:"column:action_verb"`
+	StatusCode    int             `gorm:"column:status_code"`
+	CreatedAt     time.Time       `gorm:"column:created_at;index:idx_audit_type_time,priority:2;index:idx_audit_actor_time,priority:2;index:idx_audit_asset_time,priority:2;index:idx_audit_ns_time,priority:2;index:idx_audit_plugin_time,priority:2;autoCreateTime"`
 }
 
 // TableName returns the GORM table name.

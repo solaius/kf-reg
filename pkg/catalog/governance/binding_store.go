@@ -25,13 +25,16 @@ func (s *BindingStore) AutoMigrate() error {
 	return nil
 }
 
-// GetBinding retrieves the binding for a specific asset in a specific environment.
+// GetBinding retrieves the binding for a specific asset in a specific environment within a namespace.
 // Returns nil, nil if no binding exists.
-func (s *BindingStore) GetBinding(plugin, kind, name, environment string) (*EnvBindingRecord, error) {
+func (s *BindingStore) GetBinding(namespace, plugin, kind, name, environment string) (*EnvBindingRecord, error) {
+	if namespace == "" {
+		namespace = "default"
+	}
 	var record EnvBindingRecord
 	err := s.db.Where(
-		"plugin = ? AND asset_kind = ? AND asset_name = ? AND environment = ?",
-		plugin, kind, name, environment,
+		"namespace = ? AND plugin = ? AND asset_kind = ? AND asset_name = ? AND environment = ?",
+		namespace, plugin, kind, name, environment,
 	).First(&record).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -44,8 +47,12 @@ func (s *BindingStore) GetBinding(plugin, kind, name, environment string) (*EnvB
 
 // SetBinding creates or updates a binding using an upsert on the unique index.
 func (s *BindingStore) SetBinding(record *EnvBindingRecord) error {
+	if record.Namespace == "" {
+		record.Namespace = "default"
+	}
 	return s.db.Clauses(clause.OnConflict{
 		Columns: []clause.Column{
+			{Name: "namespace"},
 			{Name: "plugin"},
 			{Name: "asset_kind"},
 			{Name: "asset_name"},
@@ -57,12 +64,15 @@ func (s *BindingStore) SetBinding(record *EnvBindingRecord) error {
 	}).Create(record).Error
 }
 
-// ListBindings returns all environment bindings for a specific asset.
-func (s *BindingStore) ListBindings(plugin, kind, name string) ([]EnvBindingRecord, error) {
+// ListBindings returns all environment bindings for a specific asset within a namespace.
+func (s *BindingStore) ListBindings(namespace, plugin, kind, name string) ([]EnvBindingRecord, error) {
+	if namespace == "" {
+		namespace = "default"
+	}
 	var records []EnvBindingRecord
 	err := s.db.Where(
-		"plugin = ? AND asset_kind = ? AND asset_name = ?",
-		plugin, kind, name,
+		"namespace = ? AND plugin = ? AND asset_kind = ? AND asset_name = ?",
+		namespace, plugin, kind, name,
 	).Order("environment ASC").Find(&records).Error
 	if err != nil {
 		return nil, fmt.Errorf("list bindings: %w", err)

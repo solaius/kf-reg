@@ -235,7 +235,7 @@ func TestManagementRouterRBAC(t *testing.T) {
 	p := &testMgmtPlugin{}
 
 	r := chi.NewRouter()
-	mgmt := managementRouter(p, DefaultRoleExtractor, nil)
+	mgmt := managementRouter(p, DefaultRoleExtractor, nil, nil)
 	r.Mount("/", mgmt)
 
 	t.Run("viewer can list sources", func(t *testing.T) {
@@ -895,7 +895,7 @@ func TestManagementRouter_ActionRoutes(t *testing.T) {
 		}
 
 		r := chi.NewRouter()
-		r.Mount("/", managementRouter(p, noopExtractor, nil))
+		r.Mount("/", managementRouter(p, noopExtractor, nil, nil))
 
 		body := `{"action": "refresh"}`
 		req := httptest.NewRequest("POST", "/sources/my-src:action", bytes.NewReader([]byte(body)))
@@ -927,7 +927,7 @@ func TestManagementRouter_ActionRoutes(t *testing.T) {
 		}
 
 		r := chi.NewRouter()
-		r.Mount("/", managementRouter(p, noopExtractor, nil))
+		r.Mount("/", managementRouter(p, noopExtractor, nil, nil))
 
 		body := `{"action": "tag", "params": {"tags": ["prod"]}}`
 		req := httptest.NewRequest("POST", "/entities/my-model:action", bytes.NewReader([]byte(body)))
@@ -955,7 +955,7 @@ func TestManagementRouter_ActionRoutes(t *testing.T) {
 		}
 
 		r := chi.NewRouter()
-		r.Mount("/", managementRouter(p, noopExtractor, nil))
+		r.Mount("/", managementRouter(p, noopExtractor, nil, nil))
 
 		req := httptest.NewRequest("GET", "/actions/source", nil)
 		rr := httptest.NewRecorder()
@@ -981,7 +981,7 @@ func TestManagementRouter_ActionRoutes(t *testing.T) {
 		}
 
 		r := chi.NewRouter()
-		r.Mount("/", managementRouter(p, noopExtractor, nil))
+		r.Mount("/", managementRouter(p, noopExtractor, nil, nil))
 
 		req := httptest.NewRequest("GET", "/actions/asset", nil)
 		rr := httptest.NewRecorder()
@@ -999,7 +999,7 @@ func TestManagementRouter_ActionRoutes(t *testing.T) {
 		p := &testMgmtPlugin{} // does not implement ActionProvider
 
 		r := chi.NewRouter()
-		r.Mount("/", managementRouter(p, noopExtractor, nil))
+		r.Mount("/", managementRouter(p, noopExtractor, nil, nil))
 
 		// Verify that action discovery returns 405 (method not allowed) since the
 		// route is not registered at all.
@@ -1022,7 +1022,7 @@ func TestManagementRouter_ActionRoutes(t *testing.T) {
 		}
 
 		r := chi.NewRouter()
-		r.Mount("/", managementRouter(p, viewerExtractor, nil))
+		r.Mount("/", managementRouter(p, viewerExtractor, nil, nil))
 
 		body := `{"action": "refresh"}`
 		req := httptest.NewRequest("POST", "/sources/src1:action", bytes.NewReader([]byte(body)))
@@ -1045,7 +1045,7 @@ func TestManagementRouter_ActionRoutes(t *testing.T) {
 		}
 
 		r := chi.NewRouter()
-		r.Mount("/", managementRouter(p, viewerExtractor, nil))
+		r.Mount("/", managementRouter(p, viewerExtractor, nil, nil))
 
 		req := httptest.NewRequest("GET", "/actions/source", nil)
 		rr := httptest.NewRecorder()

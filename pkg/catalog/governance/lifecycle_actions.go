@@ -51,22 +51,22 @@ func (h *LifecycleActionHandler) SetApprovalEngine(approvalStore *ApprovalStore,
 
 // HandleAction dispatches a lifecycle action.
 // Supported actions: lifecycle.setState, lifecycle.deprecate, lifecycle.archive, lifecycle.restore
-func (h *LifecycleActionHandler) HandleAction(ctx context.Context, plugin, kind, name, actor, action string, params map[string]any, dryRun bool) (*ActionResult, error) {
+func (h *LifecycleActionHandler) HandleAction(ctx context.Context, namespace, plugin, kind, name, actor, action string, params map[string]any, dryRun bool) (*ActionResult, error) {
 	switch action {
 	case "lifecycle.setState":
-		return h.handleSetState(ctx, plugin, kind, name, actor, params, dryRun)
+		return h.handleSetState(ctx, namespace, plugin, kind, name, actor, params, dryRun)
 	case "lifecycle.deprecate":
-		return h.handleDeprecate(ctx, plugin, kind, name, actor, params, dryRun)
+		return h.handleDeprecate(ctx, namespace, plugin, kind, name, actor, params, dryRun)
 	case "lifecycle.archive":
-		return h.handleArchive(ctx, plugin, kind, name, actor, params, dryRun)
+		return h.handleArchive(ctx, namespace, plugin, kind, name, actor, params, dryRun)
 	case "lifecycle.restore":
-		return h.handleRestore(ctx, plugin, kind, name, actor, params, dryRun)
+		return h.handleRestore(ctx, namespace, plugin, kind, name, actor, params, dryRun)
 	default:
 		return nil, fmt.Errorf("unknown lifecycle action: %s", action)
 	}
 }
 
-func (h *LifecycleActionHandler) handleSetState(ctx context.Context, plugin, kind, name, actor string, params map[string]any, dryRun bool) (*ActionResult, error) {
+func (h *LifecycleActionHandler) handleSetState(ctx context.Context, namespace, plugin, kind, name, actor string, params map[string]any, dryRun bool) (*ActionResult, error) {
 	stateStr, ok := params["state"].(string)
 	if !ok || stateStr == "" {
 		return nil, fmt.Errorf("missing or invalid 'state' parameter")
@@ -76,7 +76,7 @@ func (h *LifecycleActionHandler) handleSetState(ctx context.Context, plugin, kin
 
 	// Get or create governance record.
 	uid := fmt.Sprintf("%s:%s:%s", plugin, kind, name)
-	record, err := h.store.EnsureExists(plugin, kind, name, uid, actor)
+	record, err := h.store.EnsureExists(namespace, plugin, kind, name, uid, actor)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get governance record: %w", err)
 	}
@@ -116,16 +116,16 @@ func (h *LifecycleActionHandler) handleSetState(ctx context.Context, plugin, kin
 
 	// If an approval gate applies, create a pending request instead of executing.
 	if needsApprovalGate {
-		return h.createApprovalRequest(plugin, kind, name, actor, reason, record.AssetUID, params, evalResult)
+		return h.createApprovalRequest(namespace, plugin, kind, name, actor, reason, record.AssetUID, params, evalResult)
 	}
 
 	// No approval gate -- execute the transition directly.
-	return h.executeTransition(plugin, kind, name, actor, params, reason)
+	return h.executeTransition(namespace, plugin, kind, name, actor, params, reason)
 }
 
 // createApprovalRequest creates a pending approval request and returns a 202-style result.
 func (h *LifecycleActionHandler) createApprovalRequest(
-	plugin, kind, name, actor, reason, assetUID string,
+	namespace, plugin, kind, name, actor, reason, assetUID string,
 	params map[string]any,
 	evalResult EvaluationResult,
 ) (*ActionResult, error) {
@@ -139,6 +139,7 @@ func (h *LifecycleActionHandler) createApprovalRequest(
 
 	rec := &ApprovalRequestRecord{
 		ID:            reqID,
+		Namespace:     namespace,
 		AssetUID:      assetUID,
 		Plugin:        plugin,
 		AssetKind:     kind,
@@ -159,6 +160,7 @@ func (h *LifecycleActionHandler) createApprovalRequest(
 
 	_ = h.auditStore.Append(&AuditEventRecord{
 		ID:            uuid.New().String(),
+		Namespace:     namespace,
 		CorrelationID: reqID,
 		EventType:     "governance.approval.requested",
 		Actor:         actor,
@@ -188,12 +190,12 @@ func (h *LifecycleActionHandler) createApprovalRequest(
 // executeTransition performs the actual lifecycle state transition.
 // Called directly when no approval gate applies, or by the approval handler
 // after the approval threshold is met.
-func (h *LifecycleActionHandler) executeTransition(plugin, kind, name, actor string, params map[string]any, reason string) (*ActionResult, error) {
+func (h *LifecycleActionHandler) executeTransition(namespace, plugin, kind, name, actor string, params map[string]any, reason string) (*ActionResult, error) {
 	stateStr, _ := params["state"].(string)
 	toState := LifecycleState(stateStr)
 
 	uid := fmt.Sprintf("%s:%s:%s", plugin, kind, name)
-	record, err := h.store.EnsureExists(plugin, kind, name, uid, actor)
+	record, err := h.store.EnsureExists(namespace, plugin, kind, name, uid, actor)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get governance record: %w", err)
 	}
@@ -211,6 +213,7 @@ func (h *LifecycleActionHandler) executeTransition(plugin, kind, name, actor str
 
 	_ = h.auditStore.Append(&AuditEventRecord{
 		ID:            uuid.New().String(),
+		Namespace:     namespace,
 		CorrelationID: uuid.New().String(),
 		EventType:     "governance.lifecycle.changed",
 		Actor:         actor,
@@ -235,12 +238,12 @@ func (h *LifecycleActionHandler) executeTransition(plugin, kind, name, actor str
 }
 
 // handleDeprecate is a convenience for lifecycle.setState with state=deprecated.
-func (h *LifecycleActionHandler) handleDeprecate(ctx context.Context, plugin, kind, name, actor string, params map[string]any, dryRun bool) (*ActionResult, error) {
+func (h *LifecycleActionHandler) handleDeprecate(ctx context.Context, namespace, plugin, kind, name, actor string, params map[string]any, dryRun bool) (*ActionResult, error) {
 	if params == nil {
 		params = make(map[string]any)
 	}
 	params["state"] = "deprecated"
-	result, err := h.handleSetState(ctx, plugin, kind, name, actor, params, dryRun)
+	result, err := h.handleSetState(ctx, namespace, plugin, kind, name, actor, params, dryRun)
 	if result != nil {
 		result.Action = "lifecycle.deprecate"
 	}
@@ -248,12 +251,12 @@ func (h *LifecycleActionHandler) handleDeprecate(ctx context.Context, plugin, ki
 }
 
 // handleArchive is a convenience for lifecycle.setState with state=archived.
-func (h *LifecycleActionHandler) handleArchive(ctx context.Context, plugin, kind, name, actor string, params map[string]any, dryRun bool) (*ActionResult, error) {
+func (h *LifecycleActionHandler) handleArchive(ctx context.Context, namespace, plugin, kind, name, actor string, params map[string]any, dryRun bool) (*ActionResult, error) {
 	if params == nil {
 		params = make(map[string]any)
 	}
 	params["state"] = "archived"
-	result, err := h.handleSetState(ctx, plugin, kind, name, actor, params, dryRun)
+	result, err := h.handleSetState(ctx, namespace, plugin, kind, name, actor, params, dryRun)
 	if result != nil {
 		result.Action = "lifecycle.archive"
 	}
@@ -261,7 +264,7 @@ func (h *LifecycleActionHandler) handleArchive(ctx context.Context, plugin, kind
 }
 
 // handleRestore transitions archived assets back to deprecated or draft.
-func (h *LifecycleActionHandler) handleRestore(ctx context.Context, plugin, kind, name, actor string, params map[string]any, dryRun bool) (*ActionResult, error) {
+func (h *LifecycleActionHandler) handleRestore(ctx context.Context, namespace, plugin, kind, name, actor string, params map[string]any, dryRun bool) (*ActionResult, error) {
 	if params == nil {
 		params = make(map[string]any)
 	}
@@ -270,7 +273,7 @@ func (h *LifecycleActionHandler) handleRestore(ctx context.Context, plugin, kind
 		targetState = "deprecated" // default restore target
 	}
 	params["state"] = targetState
-	result, err := h.handleSetState(ctx, plugin, kind, name, actor, params, dryRun)
+	result, err := h.handleSetState(ctx, namespace, plugin, kind, name, actor, params, dryRun)
 	if result != nil {
 		result.Action = "lifecycle.restore"
 	}

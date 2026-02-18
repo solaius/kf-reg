@@ -202,21 +202,43 @@ func (p *AgentPlugin) allEntries() []AgentEntry {
 	return all
 }
 
-// listHandler returns all agents, optionally filtered by filterQuery.
+// listHandler returns all agents, optionally filtered by filterQuery,
+// with pagination (pageSize, pageToken) and ordering (orderBy, sortOrder).
 func (p *AgentPlugin) listHandler(w http.ResponseWriter, r *http.Request) {
 	entries := p.allEntries()
 
-	// Apply basic filterQuery support.
+	// Sanitize and apply filterQuery.
 	filterQuery := r.URL.Query().Get("filterQuery")
 	if filterQuery != "" {
-		entries = applyFilter(entries, filterQuery)
+		sanitized, err := plugin.SanitizeFilterQuery(filterQuery)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		entries = applyFilter(entries, sanitized)
 	}
 
-	response := map[string]any{
-		"items":    entries,
-		"size":     len(entries),
-		"pageSize": len(entries),
+	// Parse pagination and ordering params.
+	params := plugin.ParsePaginationParams(r)
+
+	// Sort before pagination.
+	if params.OrderBy != "" {
+		plugin.SortByField(entries, func(e AgentEntry) string {
+			return getFieldValue(e, params.OrderBy)
+		}, params.SortOrder == "DESC")
+	} else {
+		// Default stable ordering by name.
+		plugin.SortByField(entries, func(e AgentEntry) string {
+			return e.Name
+		}, false)
 	}
+
+	totalSize := len(entries)
+	page, nextPageToken := plugin.PaginateSlice(entries, params)
+
+	response := plugin.BuildPaginatedResponse(page, totalSize, params.PageSize, nextPageToken)
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {

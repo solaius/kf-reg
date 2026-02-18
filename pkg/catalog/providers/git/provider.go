@@ -194,6 +194,16 @@ func (p *Provider[E, A]) LastCommit() string {
 	return p.lastCommit
 }
 
+// RepoURL returns the Git repository URL configured for this provider.
+func (p *Provider[E, A]) RepoURL() string {
+	return p.repoURL
+}
+
+// Branch returns the branch name configured for this provider.
+func (p *Provider[E, A]) Branch() string {
+	return p.branch
+}
+
 func (p *Provider[E, A]) cloneAndRead() ([]catalog.Record[E, A], error) {
 	// Create temp directory for the clone.
 	dir, err := os.MkdirTemp("", "catalog-git-*")

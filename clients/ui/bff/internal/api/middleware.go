@@ -145,6 +145,12 @@ func (app *App) AttachModelCatalogRESTClient(next func(http.ResponseWriter, *htt
 		// apply, rollback, refresh, etc.) are not blocked by RBAC.
 		headers.Set("X-User-Role", "operator")
 
+		// Forward the namespace to the catalog server via the X-Namespace header.
+		// The catalog server's tenancy middleware reads this header for multi-tenant mode.
+		if ns, ok := r.Context().Value(constants.NamespaceHeaderParameterKey).(string); ok && ns != "" {
+			headers.Set("X-Namespace", ns)
+		}
+
 		// If using user token authentication, extract and forward the authorization header
 		if app.config.AuthMethod == config.AuthMethodUser {
 			identity, ok := r.Context().Value(constants.RequestIdentityKey).(*kubernetes.RequestIdentity)

@@ -34,7 +34,7 @@ func TestAuditStore_Append(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify the event was stored.
-	events, _, total, err := store.ListByAsset("mcp:mcpserver:filesystem", 10, "")
+	events, _, total, err := store.ListByAsset("default", "mcp:mcpserver:filesystem", 10, "")
 	require.NoError(t, err)
 	assert.Equal(t, 1, total)
 	assert.Len(t, events, 1)
@@ -74,7 +74,7 @@ func TestAuditStore_ListByAsset(t *testing.T) {
 	}))
 
 	// List all for the asset.
-	events, nextToken, total, err := store.ListByAsset(assetUID, 10, "")
+	events, nextToken, total, err := store.ListByAsset("default", assetUID, 10, "")
 	require.NoError(t, err)
 	assert.Equal(t, 5, total)
 	assert.Len(t, events, 5)
@@ -87,18 +87,18 @@ func TestAuditStore_ListByAsset(t *testing.T) {
 	}
 
 	// Paginate with pageSize 2.
-	page1, token1, total1, err := store.ListByAsset(assetUID, 2, "")
+	page1, token1, total1, err := store.ListByAsset("default", assetUID, 2, "")
 	require.NoError(t, err)
 	assert.Equal(t, 5, total1)
 	assert.Len(t, page1, 2)
 	assert.NotEmpty(t, token1)
 
-	page2, token2, _, err := store.ListByAsset(assetUID, 2, token1)
+	page2, token2, _, err := store.ListByAsset("default", assetUID, 2, token1)
 	require.NoError(t, err)
 	assert.Len(t, page2, 2)
 	assert.NotEmpty(t, token2)
 
-	page3, token3, _, err := store.ListByAsset(assetUID, 2, token2)
+	page3, token3, _, err := store.ListByAsset("default", assetUID, 2, token2)
 	require.NoError(t, err)
 	assert.Len(t, page3, 1)
 	assert.Empty(t, token3)
@@ -132,13 +132,13 @@ func TestAuditStore_ListAll(t *testing.T) {
 	}
 
 	// List all without filter.
-	events, _, total, err := store.ListAll(10, "", "")
+	events, _, total, err := store.ListAll("default", 10, "", "")
 	require.NoError(t, err)
 	assert.Equal(t, 5, total)
 	assert.Len(t, events, 5)
 
 	// Filter by event type.
-	events, _, total, err = store.ListAll(10, "", "governance.metadata.changed")
+	events, _, total, err = store.ListAll("default", 10, "", "governance.metadata.changed")
 	require.NoError(t, err)
 	assert.Equal(t, 3, total)
 	assert.Len(t, events, 3)
@@ -146,13 +146,13 @@ func TestAuditStore_ListAll(t *testing.T) {
 		assert.Equal(t, "governance.metadata.changed", e.EventType)
 	}
 
-	events, _, total, err = store.ListAll(10, "", "governance.lifecycle.transitioned")
+	events, _, total, err = store.ListAll("default", 10, "", "governance.lifecycle.transitioned")
 	require.NoError(t, err)
 	assert.Equal(t, 2, total)
 	assert.Len(t, events, 2)
 
 	// Filter with non-matching type.
-	events, _, total, err = store.ListAll(10, "", "nonexistent.type")
+	events, _, total, err = store.ListAll("default", 10, "", "nonexistent.type")
 	require.NoError(t, err)
 	assert.Equal(t, 0, total)
 	assert.Empty(t, events)
@@ -196,7 +196,7 @@ func TestAuditStore_DeleteOlderThan(t *testing.T) {
 	assert.Equal(t, int64(3), deleted)
 
 	// Verify only recent events remain.
-	events, _, total, err := store.ListAll(10, "", "")
+	events, _, total, err := store.ListAll("default", 10, "", "")
 	require.NoError(t, err)
 	assert.Equal(t, 2, total)
 	assert.Len(t, events, 2)
@@ -225,7 +225,7 @@ func TestAuditStore_DeleteOlderThan_NoMatches(t *testing.T) {
 	assert.Equal(t, int64(0), deleted)
 
 	// Verify event still exists.
-	events, _, total, err := store.ListAll(10, "", "")
+	events, _, total, err := store.ListAll("default", 10, "", "")
 	require.NoError(t, err)
 	assert.Equal(t, 1, total)
 	assert.Len(t, events, 1)

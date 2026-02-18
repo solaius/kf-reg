@@ -168,21 +168,40 @@ func (p *KnowledgeSourcePlugin) allEntries() []KnowledgeSourceEntry {
 	return all
 }
 
-// listHandler returns all knowledge sources, optionally filtered by filterQuery.
+// listHandler returns all knowledge sources, optionally filtered by filterQuery,
+// with pagination (pageSize, pageToken) and ordering (orderBy, sortOrder).
 func (p *KnowledgeSourcePlugin) listHandler(w http.ResponseWriter, r *http.Request) {
 	entries := p.allEntries()
 
-	// Apply basic filterQuery support.
+	// Sanitize and apply filterQuery.
 	filterQuery := r.URL.Query().Get("filterQuery")
 	if filterQuery != "" {
-		entries = applyFilter(entries, filterQuery)
+		sanitized, err := plugin.SanitizeFilterQuery(filterQuery)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		entries = applyFilter(entries, sanitized)
 	}
 
-	response := map[string]any{
-		"items":    entries,
-		"size":     len(entries),
-		"pageSize": len(entries),
+	params := plugin.ParsePaginationParams(r)
+
+	if params.OrderBy != "" {
+		plugin.SortByField(entries, func(e KnowledgeSourceEntry) string {
+			return getFieldValue(e, params.OrderBy)
+		}, params.SortOrder == "DESC")
+	} else {
+		plugin.SortByField(entries, func(e KnowledgeSourceEntry) string {
+			return e.Name
+		}, false)
 	}
+
+	totalSize := len(entries)
+	page, nextPageToken := plugin.PaginateSlice(entries, params)
+
+	response := plugin.BuildPaginatedResponse(page, totalSize, params.PageSize, nextPageToken)
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {

@@ -9,6 +9,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+
+	"github.com/kubeflow/model-registry/pkg/tenancy"
 )
 
 // getGovernanceHandler returns a handler that retrieves the governance overlay
@@ -18,9 +20,10 @@ func getGovernanceHandler(store *GovernanceStore) http.HandlerFunc {
 		pluginName := chi.URLParam(r, "plugin")
 		kind := chi.URLParam(r, "kind")
 		name := chi.URLParam(r, "name")
+		ns := tenancy.NamespaceFromContext(r.Context())
 
 		actor := extractActor(r)
-		record, err := store.EnsureExists(pluginName, kind, name, "", actor)
+		record, err := store.EnsureExists(ns, pluginName, kind, name, "", actor)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to get governance record: %v", err))
 			return
@@ -44,6 +47,7 @@ func patchGovernanceHandler(store *GovernanceStore, auditStore *AuditStore) http
 		pluginName := chi.URLParam(r, "plugin")
 		kind := chi.URLParam(r, "kind")
 		name := chi.URLParam(r, "name")
+		ns := tenancy.NamespaceFromContext(r.Context())
 
 		var overlay GovernanceOverlay
 		if err := json.NewDecoder(r.Body).Decode(&overlay); err != nil {
@@ -54,7 +58,7 @@ func patchGovernanceHandler(store *GovernanceStore, auditStore *AuditStore) http
 		actor := extractActor(r)
 
 		// Load or create the existing record.
-		record, err := store.EnsureExists(pluginName, kind, name, "", actor)
+		record, err := store.EnsureExists(ns, pluginName, kind, name, "", actor)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to load governance record: %v", err))
 			return
@@ -76,6 +80,7 @@ func patchGovernanceHandler(store *GovernanceStore, auditStore *AuditStore) http
 		newOverlay := recordToOverlay(record)
 		auditEvent := &AuditEventRecord{
 			ID:        uuid.New().String(),
+			Namespace: ns,
 			EventType: "governance.metadata.changed",
 			Actor:     actor,
 			AssetUID:  record.AssetUID,
@@ -105,9 +110,10 @@ func getHistoryHandler(store *GovernanceStore, auditStore *AuditStore) http.Hand
 		pluginName := chi.URLParam(r, "plugin")
 		kind := chi.URLParam(r, "kind")
 		name := chi.URLParam(r, "name")
+		ns := tenancy.NamespaceFromContext(r.Context())
 
 		// Resolve asset UID from the governance record.
-		record, err := store.Get(pluginName, kind, name)
+		record, err := store.Get(ns, pluginName, kind, name)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to load governance record: %v", err))
 			return
@@ -128,7 +134,7 @@ func getHistoryHandler(store *GovernanceStore, auditStore *AuditStore) http.Hand
 		}
 		pageToken := r.URL.Query().Get("pageToken")
 
-		records, nextToken, total, err := auditStore.ListByAsset(record.AssetUID, pageSize, pageToken)
+		records, nextToken, total, err := auditStore.ListByAsset(ns, record.AssetUID, pageSize, pageToken)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to list audit events: %v", err))
 			return
@@ -157,6 +163,7 @@ func combinedActionHandler(lifecycleHandler *LifecycleActionHandler, promotionHa
 		kind := chi.URLParam(r, "kind")
 		name := chi.URLParam(r, "name")
 		action := chi.URLParam(r, "action")
+		ns := tenancy.NamespaceFromContext(r.Context())
 
 		actor := extractActor(r)
 
@@ -177,13 +184,13 @@ func combinedActionHandler(lifecycleHandler *LifecycleActionHandler, promotionHa
 
 		switch {
 		case isLifecycleAction(action):
-			result, err = lifecycleHandler.HandleAction(r.Context(), pluginName, kind, name, actor, action, req.Params, req.DryRun)
+			result, err = lifecycleHandler.HandleAction(r.Context(), ns, pluginName, kind, name, actor, action, req.Params, req.DryRun)
 		case isPromotionAction(action):
 			if promotionHandler == nil {
 				writeError(w, http.StatusNotImplemented, "versioning and promotion are not enabled")
 				return
 			}
-			result, err = promotionHandler.HandleAction(r.Context(), pluginName, kind, name, actor, action, req.Params, req.DryRun)
+			result, err = promotionHandler.HandleAction(r.Context(), ns, pluginName, kind, name, actor, action, req.Params, req.DryRun)
 		default:
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown action: %s", action))
 			return

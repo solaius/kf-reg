@@ -1,0 +1,87 @@
+# Example RBAC manifests for catalog-server SAR-based authorization.
+# These define Roles and ClusterRoles using the catalog.kubeflow.org API group.
+#
+# Apply with: kubectl apply -f rbac-examples.yaml
+# Bind to users/groups with RoleBindings or ClusterRoleBindings.
+
+---
+# Role: AI Engineer (namespace-scoped)
+# Can manage sources, browse assets, execute actions, and trigger refresh jobs.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: catalog-ai-engineer
+  namespace: team-a
+rules:
+- apiGroups: ["catalog.kubeflow.org"]
+  resources: ["catalogsources", "assets", "actions", "jobs"]
+  verbs: ["get", "list", "create", "update", "execute"]
+- apiGroups: ["catalog.kubeflow.org"]
+  resources: ["plugins", "capabilities"]
+  verbs: ["get", "list"]
+- apiGroups: ["catalog.kubeflow.org"]
+  resources: ["audit"]
+  verbs: ["get", "list"]
+---
+# Role: Viewer (namespace-scoped)
+# Read-only access to all catalog resources.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: catalog-viewer
+  namespace: team-a
+rules:
+- apiGroups: ["catalog.kubeflow.org"]
+  resources: ["plugins", "capabilities", "catalogsources", "assets", "actions", "audit"]
+  verbs: ["get", "list"]
+---
+# ClusterRole: Platform Operator
+# Full access to all catalog resources across all namespaces.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: catalog-platform-operator
+rules:
+- apiGroups: ["catalog.kubeflow.org"]
+  resources: ["plugins", "capabilities", "catalogsources", "assets", "actions", "jobs", "approvals", "audit"]
+  verbs: ["get", "list", "create", "update", "delete", "execute", "approve"]
+---
+# ClusterRole: Cluster Viewer
+# Read-only access to all catalog resources across all namespaces.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: catalog-cluster-viewer
+rules:
+- apiGroups: ["catalog.kubeflow.org"]
+  resources: ["plugins", "capabilities", "catalogsources", "assets", "actions", "audit"]
+  verbs: ["get", "list"]
+---
+# Example RoleBinding: bind ai-engineer role to user alice in team-a
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: alice-ai-engineer
+  namespace: team-a
+subjects:
+- kind: User
+  name: alice
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: catalog-ai-engineer
+  apiGroup: rbac.authorization.k8s.io
+---
+# Example ClusterRoleBinding: bind platform-operator to ops group
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ops-platform-operator
+subjects:
+- kind: Group
+  name: platform-ops
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: catalog-platform-operator
+  apiGroup: rbac.authorization.k8s.io

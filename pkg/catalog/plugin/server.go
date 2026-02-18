@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,7 +16,13 @@ import (
 	"github.com/go-chi/cors"
 	"gorm.io/gorm"
 
+	"github.com/kubeflow/model-registry/pkg/audit"
+	"github.com/kubeflow/model-registry/pkg/authz"
+	"github.com/kubeflow/model-registry/pkg/cache"
 	"github.com/kubeflow/model-registry/pkg/catalog/governance"
+	"github.com/kubeflow/model-registry/pkg/ha"
+	"github.com/kubeflow/model-registry/pkg/jobs"
+	"github.com/kubeflow/model-registry/pkg/tenancy"
 )
 
 // failedPlugin records a plugin that failed during initialization.
@@ -42,6 +49,15 @@ type Server struct {
 	governanceStore  *governance.GovernanceStore
 	auditStore       *governance.AuditStore
 	governanceConfig *governance.GovernanceConfig
+	auditConfig      *audit.AuditConfig
+	jobConfig        *jobs.JobConfig
+	jobStore         *jobs.JobStore
+	jobWorker        *jobs.WorkerPool
+	tenancyMode      tenancy.TenancyMode
+	authorizer       authz.Authorizer
+	cacheManager     *cache.CacheManager
+	migrationLocker  ha.MigrationLocker
+	leaderElector    *ha.LeaderElector
 	startedAt        time.Time
 	initialLoadDone  bool
 	mu               sync.RWMutex
@@ -75,10 +91,76 @@ func WithSecretResolver(resolver SecretResolver) ServerOption {
 	}
 }
 
+// WithTenancyMode sets the tenancy mode for the server.
+// Defaults to ModeSingle if not set.
+func WithTenancyMode(mode tenancy.TenancyMode) ServerOption {
+	return func(s *Server) {
+		s.tenancyMode = mode
+	}
+}
+
+// WithAuthorizer sets the Authorizer for SAR-based authorization.
+// When set, management routes use fine-grained permission checks instead of
+// the simple RoleExtractor-based model.
+func WithAuthorizer(a authz.Authorizer) ServerOption {
+	return func(s *Server) {
+		s.authorizer = a
+	}
+}
+
+// WithCacheConfig sets up the CacheManager for caching discovery and
+// capabilities endpoints. If the config is nil or disabled, no caching is applied.
+func WithCacheConfig(cfg *cache.CacheConfig) ServerOption {
+	return func(s *Server) {
+		s.cacheManager = cache.NewCacheManager(cfg)
+	}
+}
+
+// WithMigrationLocker sets the MigrationLocker used to serialize database
+// migrations across multiple replicas. If not set, migrations run without
+// locking (safe for single-replica deployments).
+func WithMigrationLocker(locker ha.MigrationLocker) ServerOption {
+	return func(s *Server) {
+		s.migrationLocker = locker
+	}
+}
+
+// WithLeaderElector sets the LeaderElector for gating singleton background
+// workers. Only the leader replica runs reconcile loops, audit cleanup, and
+// other periodic tasks.
+func WithLeaderElector(le *ha.LeaderElector) ServerOption {
+	return func(s *Server) {
+		s.leaderElector = le
+	}
+}
+
+// IsLeader returns true if this server instance is the current leader.
+// Returns true when leader election is not configured (single-replica mode).
+func (s *Server) IsLeader() bool {
+	if s.leaderElector == nil {
+		return true
+	}
+	return s.leaderElector.IsLeader()
+}
+
 // WithGovernanceConfig sets the governance configuration for the server.
 func WithGovernanceConfig(cfg *governance.GovernanceConfig) ServerOption {
 	return func(s *Server) {
 		s.governanceConfig = cfg
+	}
+}
+
+// WithAuditConfig sets the audit V2 configuration for the server.
+func WithAuditConfig(cfg *audit.AuditConfig) ServerOption {
+	return func(s *Server) {
+		s.auditConfig = cfg
+	}
+}
+
+// WithJobConfig sets the async job queue configuration for the server.
+func WithJobConfig(cfg *jobs.JobConfig) ServerOption {
+	return func(s *Server) {
+		s.jobConfig = cfg
 	}
 }
 
@@ -126,33 +208,53 @@ func (s *Server) Init(ctx context.Context) error {
 		}
 	}
 
-	// Auto-migrate the refresh status table.
+	// Auto-migrate all tables. When a MigrationLocker is configured, all
+	// migrations run under the lock to prevent concurrent schema changes
+	// from multiple replicas.
 	if s.db != nil {
-		if err := s.db.AutoMigrate(&RefreshStatusRecord{}); err != nil {
-			s.logger.Error("failed to auto-migrate refresh status table", "error", err)
+		migrateFn := func() error {
+			if err := s.db.AutoMigrate(&RefreshStatusRecord{}); err != nil {
+				s.logger.Error("failed to auto-migrate refresh status table", "error", err)
+			}
+
+			s.overlayStore = NewOverlayStore(s.db)
+			if err := s.overlayStore.AutoMigrate(); err != nil {
+				s.logger.Error("failed to auto-migrate overlay store table", "error", err)
+			}
+
+			s.governanceStore = governance.NewGovernanceStore(s.db)
+			s.auditStore = governance.NewAuditStore(s.db)
+			if err := s.governanceStore.AutoMigrate(); err != nil {
+				s.logger.Error("failed to auto-migrate governance tables", "error", err)
+			}
+
+			vStore := governance.NewVersionStore(s.db)
+			if err := vStore.AutoMigrate(); err != nil {
+				s.logger.Error("failed to auto-migrate version tables", "error", err)
+			}
+			bStore := governance.NewBindingStore(s.db)
+			if err := bStore.AutoMigrate(); err != nil {
+				s.logger.Error("failed to auto-migrate binding tables", "error", err)
+			}
+
+			if s.jobConfig != nil && s.jobConfig.Enabled {
+				s.jobStore = jobs.NewJobStore(s.db)
+				if err := s.jobStore.AutoMigrate(); err != nil {
+					s.logger.Error("failed to auto-migrate job tables", "error", err)
+				}
+			}
+
+			return nil
 		}
 
-		// Auto-migrate the overlay store table.
-		s.overlayStore = NewOverlayStore(s.db)
-		if err := s.overlayStore.AutoMigrate(); err != nil {
-			s.logger.Error("failed to auto-migrate overlay store table", "error", err)
-		}
-
-		// Auto-migrate governance tables.
-		s.governanceStore = governance.NewGovernanceStore(s.db)
-		s.auditStore = governance.NewAuditStore(s.db)
-		if err := s.governanceStore.AutoMigrate(); err != nil {
-			s.logger.Error("failed to auto-migrate governance tables", "error", err)
-		}
-
-		// Auto-migrate version and binding tables.
-		vStore := governance.NewVersionStore(s.db)
-		if err := vStore.AutoMigrate(); err != nil {
-			s.logger.Error("failed to auto-migrate version tables", "error", err)
-		}
-		bStore := governance.NewBindingStore(s.db)
-		if err := bStore.AutoMigrate(); err != nil {
-			s.logger.Error("failed to auto-migrate binding tables", "error", err)
+		if s.migrationLocker != nil {
+			s.logger.Info("running migrations with lock")
+			if err := s.migrationLocker.WithLock(ctx, migrateFn); err != nil {
+				s.logger.Error("migration lock error", "error", err)
+				return fmt.Errorf("migration lock error: %w", err)
+			}
+		} else {
+			_ = migrateFn()
 		}
 	}
 
@@ -223,11 +325,25 @@ func (s *Server) MountRoutes() chi.Router {
 	s.router.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"https://*", "http://*"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-PINGOTHER"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-PINGOTHER", tenancy.NamespaceHeader},
 		ExposedHeaders:   []string{"Link"},
 		AllowCredentials: false,
 		MaxAge:           300,
 	}))
+
+	// Add tenancy middleware (resolves tenant context per request).
+	s.router.Use(tenancy.NewMiddleware(s.tenancyMode))
+
+	// Add identity middleware (extracts X-Remote-User/X-Remote-Group into context).
+	s.router.Use(authz.IdentityMiddleware())
+
+	// Add audit middleware (captures management actions as audit events).
+	if s.auditStore != nil && s.auditConfig != nil && s.auditConfig.Enabled {
+		s.router.Use(audit.AuditMiddleware(s.auditStore, s.auditConfig, s.logger))
+		s.logger.Info("audit middleware enabled",
+			"logDenied", s.auditConfig.LogDenied,
+			"retentionDays", s.auditConfig.RetentionDays)
+	}
 
 	// Mount plugin routes
 	for _, p := range s.plugins {
@@ -252,7 +368,7 @@ func (s *Server) MountRoutes() chi.Router {
 			_, hasDP := p.(DiagnosticsProvider)
 			_, hasAP := p.(ActionProvider)
 			if hasSM || hasRP || hasDP || hasAP {
-				mgmtRouter := managementRouter(p, s.roleExtractor, s)
+				mgmtRouter := managementRouter(p, s.roleExtractor, s, s.authorizer)
 				r.Mount("/management", mgmtRouter)
 				s.logger.Info("mounted management routes", "plugin", p.Name(),
 					"sourceManager", hasSM, "refresh", hasRP, "diagnostics", hasDP, "actions", hasAP)
@@ -265,9 +381,18 @@ func (s *Server) MountRoutes() chi.Router {
 	s.router.Get("/livez", s.healthHandler)
 	s.router.Get("/readyz", s.readyHandler)
 
-	// Add plugin info endpoint
-	s.router.Get("/api/plugins", s.pluginsHandler)
-	s.router.Get("/api/plugins/{pluginName}/capabilities", s.capabilitiesHandler)
+	// Add plugin info endpoint, optionally wrapped with cache middleware.
+	if s.cacheManager != nil {
+		s.router.With(s.cacheManager.DiscoveryMiddleware()).Get("/api/plugins", s.pluginsHandler)
+		s.router.With(s.cacheManager.CapabilitiesMiddleware()).Get("/api/plugins/{pluginName}/capabilities", s.capabilitiesHandler)
+		s.logger.Info("discovery/capabilities caching enabled")
+	} else {
+		s.router.Get("/api/plugins", s.pluginsHandler)
+		s.router.Get("/api/plugins/{pluginName}/capabilities", s.capabilitiesHandler)
+	}
+
+	// Add tenancy API endpoint
+	s.router.Get("/api/tenancy/v1alpha1/namespaces", s.namespacesHandler)
 
 	// Mount governance routes.
 	if s.governanceStore != nil {
@@ -307,6 +432,20 @@ func (s *Server) MountRoutes() chi.Router {
 			"approvals", approvalStore != nil,
 			"versioning", versionStore != nil,
 		)
+	}
+
+	// Mount audit API routes.
+	if s.auditStore != nil {
+		auditRouter := audit.Router(s.auditStore, s.authorizer)
+		s.router.Mount("/api/audit/v1alpha1", auditRouter)
+		s.logger.Info("mounted audit API routes")
+	}
+
+	// Mount job status API routes.
+	if s.jobStore != nil {
+		jobRouter := jobs.Router(s.jobStore, s.authorizer)
+		s.router.Mount("/api/jobs/v1alpha1", jobRouter)
+		s.logger.Info("mounted job API routes")
 	}
 
 	return s.router
@@ -436,10 +575,21 @@ func (s *Server) readyHandler(w http.ResponseWriter, r *http.Request) {
 		allReady = false
 	}
 
+	// Report leader election status (informational, does not gate readiness).
+	leaderStatus := map[string]string{"status": "not_configured"}
+	if s.leaderElector != nil {
+		if s.leaderElector.IsLeader() {
+			leaderStatus["status"] = "leader"
+		} else {
+			leaderStatus["status"] = "follower"
+		}
+	}
+
 	components := map[string]any{
-		"database":     dbStatus,
-		"initial_load": initialLoadStatus,
-		"plugins":      pluginsStatus,
+		"database":        dbStatus,
+		"initial_load":    initialLoadStatus,
+		"plugins":         pluginsStatus,
+		"leader_election": leaderStatus,
 	}
 
 	status := "ready"
@@ -505,6 +655,52 @@ func (s *Server) GetAuditStore() *governance.AuditStore {
 // GetGovernanceConfig returns the server's governance configuration.
 func (s *Server) GetGovernanceConfig() *governance.GovernanceConfig {
 	return s.governanceConfig
+}
+
+// GetAuditConfig returns the server's audit configuration.
+func (s *Server) GetAuditConfig() *audit.AuditConfig {
+	return s.auditConfig
+}
+
+// GetJobStore returns the server's job store (nil if jobs are not enabled).
+func (s *Server) GetJobStore() *jobs.JobStore {
+	return s.jobStore
+}
+
+// GetJobConfig returns the server's job configuration.
+func (s *Server) GetJobConfig() *jobs.JobConfig {
+	return s.jobConfig
+}
+
+// GetCacheManager returns the server's CacheManager, or nil if caching is disabled.
+func (s *Server) GetCacheManager() *cache.CacheManager {
+	return s.cacheManager
+}
+
+// NewJobWorkerPool creates a worker pool for async refresh jobs.
+// Call Run(ctx) on the returned pool to start processing.
+// Returns nil if jobs are not enabled.
+func (s *Server) NewJobWorkerPool() *jobs.WorkerPool {
+	if s.jobStore == nil || s.jobConfig == nil || !s.jobConfig.Enabled {
+		return nil
+	}
+
+	lookup := func(pluginName string) (jobs.PluginRefresher, bool) {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		for _, p := range s.plugins {
+			if p.Name() == pluginName {
+				rp, ok := p.(RefreshProvider)
+				if !ok {
+					return nil, false
+				}
+				return &pluginRefreshAdapter{rp: rp, srv: s, pluginName: pluginName}, true
+			}
+		}
+		return nil, false
+	}
+
+	return jobs.NewWorkerPool(s.jobStore, lookup, s.jobConfig, s.logger)
 }
 
 // persistConfig saves the current in-memory config to the ConfigStore using
@@ -676,6 +872,9 @@ func (s *Server) reconcileOnce(ctx context.Context) {
 			s.logger.Error("reconcile: plugin re-init failed", "plugin", p.Name(), "error", err)
 		}
 	}
+
+	// Invalidate all caches after reconciliation since plugin state may have changed.
+	s.cacheManager.InvalidateAll()
 }
 
 // AuditCleanupLoop periodically deletes audit events older than the configured
@@ -752,6 +951,35 @@ func (s *Server) capabilitiesHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(v2caps)
+}
+
+// namespacesHandler returns the list of namespaces accessible to the user.
+// In single-tenant mode it always returns ["default"].
+// In namespace mode it returns a list from the CATALOG_NAMESPACES env var or ["default"].
+func (s *Server) namespacesHandler(w http.ResponseWriter, r *http.Request) {
+	namespaces := []string{"default"}
+	if s.tenancyMode == tenancy.ModeNamespace {
+		if ns := os.Getenv("CATALOG_NAMESPACES"); ns != "" {
+			parts := strings.Split(ns, ",")
+			trimmed := make([]string, 0, len(parts))
+			for _, p := range parts {
+				p = strings.TrimSpace(p)
+				if p != "" {
+					trimmed = append(trimmed, p)
+				}
+			}
+			if len(trimmed) > 0 {
+				namespaces = trimmed
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"namespaces": namespaces,
+		"mode":       string(s.tenancyMode),
+	})
 }
 
 // pluginsHandler returns information about registered plugins.

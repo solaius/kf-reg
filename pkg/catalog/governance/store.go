@@ -35,13 +35,16 @@ func (s *GovernanceStore) AutoMigrate() error {
 	return nil
 }
 
-// Get retrieves the governance record for an asset by plugin, kind, and name.
+// Get retrieves the governance record for an asset by namespace, plugin, kind, and name.
 // Returns nil, nil if no record exists.
-func (s *GovernanceStore) Get(plugin, kind, name string) (*AssetGovernanceRecord, error) {
+func (s *GovernanceStore) Get(namespace, plugin, kind, name string) (*AssetGovernanceRecord, error) {
+	if namespace == "" {
+		namespace = "default"
+	}
 	var record AssetGovernanceRecord
 	err := s.db.Where(
-		"plugin = ? AND asset_kind = ? AND asset_name = ?",
-		plugin, kind, name,
+		"namespace = ? AND plugin = ? AND asset_kind = ? AND asset_name = ?",
+		namespace, plugin, kind, name,
 	).First(&record).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -69,8 +72,11 @@ func (s *GovernanceStore) GetByUID(assetUID string) (*AssetGovernanceRecord, err
 // Upsert creates or updates a governance record.
 // The conflict is resolved on the asset_uid unique index.
 func (s *GovernanceStore) Upsert(record *AssetGovernanceRecord) error {
+	if record.Namespace == "" {
+		record.Namespace = "default"
+	}
 	return s.db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "asset_uid"}},
+		Columns:   []clause.Column{{Name: "namespace"}, {Name: "asset_uid"}},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"plugin", "asset_kind", "asset_name",
 			"owner_principal", "owner_display_name", "owner_email",
@@ -86,17 +92,23 @@ func (s *GovernanceStore) Upsert(record *AssetGovernanceRecord) error {
 	}).Create(record).Error
 }
 
-// Delete removes a governance record by plugin, kind, and name.
-func (s *GovernanceStore) Delete(plugin, kind, name string) error {
+// Delete removes a governance record by namespace, plugin, kind, and name.
+func (s *GovernanceStore) Delete(namespace, plugin, kind, name string) error {
+	if namespace == "" {
+		namespace = "default"
+	}
 	return s.db.Where(
-		"plugin = ? AND asset_kind = ? AND asset_name = ?",
-		plugin, kind, name,
+		"namespace = ? AND plugin = ? AND asset_kind = ? AND asset_name = ?",
+		namespace, plugin, kind, name,
 	).Delete(&AssetGovernanceRecord{}).Error
 }
 
-// List returns paginated governance records for a plugin.
+// List returns paginated governance records for a plugin within a namespace.
 // pageToken is the ID of the last record from the previous page; pass "" for the first page.
-func (s *GovernanceStore) List(plugin string, pageSize int, pageToken string) ([]AssetGovernanceRecord, string, error) {
+func (s *GovernanceStore) List(namespace, plugin string, pageSize int, pageToken string) ([]AssetGovernanceRecord, string, error) {
+	if namespace == "" {
+		namespace = "default"
+	}
 	if pageSize <= 0 {
 		pageSize = 20
 	}
@@ -104,7 +116,7 @@ func (s *GovernanceStore) List(plugin string, pageSize int, pageToken string) ([
 		pageSize = 100
 	}
 
-	query := s.db.Where("plugin = ?", plugin).Order("id ASC").Limit(pageSize + 1)
+	query := s.db.Where("namespace = ? AND plugin = ?", namespace, plugin).Order("id ASC").Limit(pageSize + 1)
 	if pageToken != "" {
 		query = query.Where("id > ?", pageToken)
 	}
@@ -125,8 +137,11 @@ func (s *GovernanceStore) List(plugin string, pageSize int, pageToken string) ([
 
 // EnsureExists returns the existing governance record for an asset, or creates
 // a new one with default values if none exists.
-func (s *GovernanceStore) EnsureExists(plugin, kind, name, uid, changedBy string) (*AssetGovernanceRecord, error) {
-	existing, err := s.Get(plugin, kind, name)
+func (s *GovernanceStore) EnsureExists(namespace, plugin, kind, name, uid, changedBy string) (*AssetGovernanceRecord, error) {
+	if namespace == "" {
+		namespace = "default"
+	}
+	existing, err := s.Get(namespace, plugin, kind, name)
 	if err != nil {
 		return nil, err
 	}
@@ -140,6 +155,7 @@ func (s *GovernanceStore) EnsureExists(plugin, kind, name, uid, changedBy string
 
 	record := &AssetGovernanceRecord{
 		ID:                 uuid.New().String(),
+		Namespace:          namespace,
 		Plugin:             plugin,
 		AssetKind:          kind,
 		AssetName:          name,

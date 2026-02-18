@@ -21,8 +21,14 @@ import (
 	"github.com/kubeflow/model-registry/internal/datastore"
 	"github.com/kubeflow/model-registry/internal/datastore/embedmd"
 	"github.com/kubeflow/model-registry/internal/db"
+	"github.com/kubeflow/model-registry/pkg/audit"
+	"github.com/kubeflow/model-registry/pkg/authz"
+	"github.com/kubeflow/model-registry/pkg/cache"
 	"github.com/kubeflow/model-registry/pkg/catalog/governance"
 	"github.com/kubeflow/model-registry/pkg/catalog/plugin"
+	"github.com/kubeflow/model-registry/pkg/ha"
+	"github.com/kubeflow/model-registry/pkg/jobs"
+	"github.com/kubeflow/model-registry/pkg/tenancy"
 
 	// Import plugins - their init() registers them
 	_ "github.com/kubeflow/model-registry/catalog/plugins/model"
@@ -183,6 +189,94 @@ func main() {
 	}
 	serverOpts = append(serverOpts, plugin.WithGovernanceConfig(govConfig))
 
+	// Load audit V2 config from environment.
+	auditCfg := audit.AuditConfigFromEnv()
+	serverOpts = append(serverOpts, plugin.WithAuditConfig(auditCfg))
+	logger.Info("audit config loaded",
+		"enabled", auditCfg.Enabled,
+		"retentionDays", auditCfg.RetentionDays,
+		"logDenied", auditCfg.LogDenied)
+
+	// Load async job config from environment.
+	jobCfg := jobs.JobConfigFromEnv()
+	serverOpts = append(serverOpts, plugin.WithJobConfig(jobCfg))
+	logger.Info("job config loaded",
+		"enabled", jobCfg.Enabled,
+		"concurrency", jobCfg.Concurrency,
+		"maxRetries", jobCfg.MaxRetries)
+
+	// Set up tenancy mode.
+	tenancyModeStr := envOrDefault("CATALOG_TENANCY_MODE", "single")
+	var tenancyMode tenancy.TenancyMode
+	switch tenancyModeStr {
+	case "single":
+		tenancyMode = tenancy.ModeSingle
+	case "namespace":
+		tenancyMode = tenancy.ModeNamespace
+	default:
+		glog.Fatalf("Unknown tenancy mode: %q (expected single or namespace)", tenancyModeStr)
+	}
+	serverOpts = append(serverOpts, plugin.WithTenancyMode(tenancyMode))
+	logger.Info("tenancy mode configured", "mode", tenancyModeStr)
+
+	// Set up authorization based on CATALOG_AUTHZ_MODE.
+	authzModeStr := envOrDefault("CATALOG_AUTHZ_MODE", "none")
+	switch authz.AuthzMode(authzModeStr) {
+	case authz.AuthzModeSAR:
+		// Create in-cluster K8s client for SAR checks (reuse existing
+		// clientset if k8s config store is already configured).
+		k8sCfg, err := rest.InClusterConfig()
+		if err != nil {
+			glog.Fatalf("Failed to create in-cluster K8s config for SAR authz: %v", err)
+		}
+		authzClient, err := kubernetes.NewForConfig(k8sCfg)
+		if err != nil {
+			glog.Fatalf("Failed to create K8s clientset for SAR authz: %v", err)
+		}
+		sarAuthorizer := authz.NewSARAuthorizer(authzClient)
+		cachedAuthorizer := authz.NewCachedAuthorizer(sarAuthorizer, authz.DefaultCacheTTL)
+		serverOpts = append(serverOpts, plugin.WithAuthorizer(cachedAuthorizer))
+		logger.Info("using SAR-based authorization", "cacheTTL", authz.DefaultCacheTTL)
+	case authz.AuthzModeNone:
+		logger.Info("authorization disabled (CATALOG_AUTHZ_MODE=none)")
+	default:
+		glog.Fatalf("Unknown authz mode: %q (expected none or sar)", authzModeStr)
+	}
+
+	// Set up discovery/capabilities caching.
+	cacheCfg := cache.CacheConfigFromEnv()
+	serverOpts = append(serverOpts, plugin.WithCacheConfig(cacheCfg))
+	logger.Info("cache config loaded",
+		"enabled", cacheCfg.Enabled,
+		"discoveryTTL", cacheCfg.DiscoveryTTL,
+		"capabilitiesTTL", cacheCfg.CapabilitiesTTL,
+		"maxSize", cacheCfg.MaxSize)
+
+	// Set up HA features (migration locking, leader election).
+	haCfg := ha.HAConfigFromEnv()
+	if haCfg.MigrationLockEnabled && gormDB != nil {
+		locker := ha.NewMigrationLocker(gormDB)
+		serverOpts = append(serverOpts, plugin.WithMigrationLocker(locker))
+		logger.Info("migration locking enabled")
+	}
+	var leaderElector *ha.LeaderElector
+	if haCfg.LeaderElectionEnabled {
+		k8sCfg, err := rest.InClusterConfig()
+		if err != nil {
+			glog.Fatalf("Failed to create in-cluster K8s config for leader election: %v", err)
+		}
+		leClient, err := kubernetes.NewForConfig(k8sCfg)
+		if err != nil {
+			glog.Fatalf("Failed to create K8s clientset for leader election: %v", err)
+		}
+		leaderElector = ha.NewLeaderElector(haCfg, leClient, haCfg.Identity, logger)
+		serverOpts = append(serverOpts, plugin.WithLeaderElector(leaderElector))
+		logger.Info("leader election enabled",
+			"identity", haCfg.Identity,
+			"lease", haCfg.LeaseName,
+			"namespace", haCfg.LeaseNamespace)
+	}
+
 	// Create and initialize server
 	server := plugin.NewServer(cfg, []string{sourcesPath}, gormDB, logger, serverOpts...)
 	if err := server.Init(ctx); err != nil {
@@ -196,11 +290,51 @@ func main() {
 		glog.Fatalf("Failed to start plugins: %v", err)
 	}
 
-	// Start config reconcile loop in background.
-	go server.ReconcileLoop(ctx)
+	// startSingletonLoops starts background workers that should only run on
+	// one replica at a time (the leader). These are started immediately in
+	// single-replica mode or by the leader election callback in HA mode.
+	startSingletonLoops := func(loopCtx context.Context) {
+		go server.ReconcileLoop(loopCtx)
 
-	// Start audit cleanup loop in background (daily, respects audit retention config).
-	go server.AuditCleanupLoop(ctx)
+		retentionDays := auditCfg.RetentionDays
+		if govConfig != nil && govConfig.AuditRetention.Days > 0 {
+			retentionDays = govConfig.AuditRetention.Days
+		}
+		retentionWorker := audit.NewRetentionWorker(server.GetAuditStore(), retentionDays, logger)
+		go retentionWorker.Run(loopCtx)
+
+		if workerPool := server.NewJobWorkerPool(); workerPool != nil {
+			go workerPool.Run(loopCtx)
+			logger.Info("async job worker pool started",
+				"concurrency", jobCfg.Concurrency,
+				"maxRetries", jobCfg.MaxRetries)
+		}
+
+		logger.Info("singleton background loops started")
+	}
+
+	if haCfg.LeaderElectionEnabled && leaderElector != nil {
+		// In HA mode, singleton loops are started/stopped by leader election
+		// callbacks. The leader election goroutine blocks until ctx is cancelled.
+		var loopCancel context.CancelFunc
+		leaderElector.OnStartLeading(func(leaderCtx context.Context) {
+			var loopCtx context.Context
+			loopCtx, loopCancel = context.WithCancel(leaderCtx)
+			startSingletonLoops(loopCtx)
+		})
+		leaderElector.OnStopLeading(func() {
+			if loopCancel != nil {
+				loopCancel()
+			}
+			logger.Info("singleton background loops stopped (lost leadership)")
+		})
+
+		go leaderElector.Run(ctx)
+		logger.Info("leader election active, singleton loops will start when elected")
+	} else {
+		// Single-replica mode: start all loops immediately.
+		startSingletonLoops(ctx)
+	}
 
 	logger.Info("catalog server ready",
 		"listen", listenAddr,

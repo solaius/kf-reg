@@ -14,6 +14,7 @@ import (
 // Tags, annotations, labels, and lifecycle changes are stored here
 // rather than mutating the source data.
 type OverlayRecord struct {
+	Namespace  string      `gorm:"primaryKey;column:namespace;default:default"`
 	PluginName string      `gorm:"primaryKey;column:plugin_name"`
 	EntityKind string      `gorm:"primaryKey;column:entity_kind"`
 	EntityUID  string      `gorm:"primaryKey;column:entity_uid"`
@@ -110,13 +111,16 @@ func (s *OverlayStore) AutoMigrate() error {
 	return s.db.AutoMigrate(&OverlayRecord{})
 }
 
-// Get retrieves the overlay for an entity.
+// Get retrieves the overlay for an entity within a namespace.
 // Returns nil, nil if no overlay exists (meaning no modifications).
-func (s *OverlayStore) Get(pluginName, entityKind, entityUID string) (*OverlayRecord, error) {
+func (s *OverlayStore) Get(namespace, pluginName, entityKind, entityUID string) (*OverlayRecord, error) {
+	if namespace == "" {
+		namespace = "default"
+	}
 	var record OverlayRecord
 	err := s.db.Where(
-		"plugin_name = ? AND entity_kind = ? AND entity_uid = ?",
-		pluginName, entityKind, entityUID,
+		"namespace = ? AND plugin_name = ? AND entity_kind = ? AND entity_uid = ?",
+		namespace, pluginName, entityKind, entityUID,
 	).First(&record).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -132,18 +136,24 @@ func (s *OverlayStore) Upsert(record *OverlayRecord) error {
 	return s.db.Clauses(clause.OnConflict{UpdateAll: true}).Create(record).Error
 }
 
-// Delete removes an overlay by its composite primary key.
-func (s *OverlayStore) Delete(pluginName, entityKind, entityUID string) error {
+// Delete removes an overlay by its composite primary key within a namespace.
+func (s *OverlayStore) Delete(namespace, pluginName, entityKind, entityUID string) error {
+	if namespace == "" {
+		namespace = "default"
+	}
 	return s.db.Where(
-		"plugin_name = ? AND entity_kind = ? AND entity_uid = ?",
-		pluginName, entityKind, entityUID,
+		"namespace = ? AND plugin_name = ? AND entity_kind = ? AND entity_uid = ?",
+		namespace, pluginName, entityKind, entityUID,
 	).Delete(&OverlayRecord{}).Error
 }
 
-// ListByPlugin returns all overlays for a plugin.
-func (s *OverlayStore) ListByPlugin(pluginName string) ([]OverlayRecord, error) {
+// ListByPlugin returns all overlays for a plugin within a namespace.
+func (s *OverlayStore) ListByPlugin(namespace, pluginName string) ([]OverlayRecord, error) {
+	if namespace == "" {
+		namespace = "default"
+	}
 	var records []OverlayRecord
-	if err := s.db.Where("plugin_name = ?", pluginName).Find(&records).Error; err != nil {
+	if err := s.db.Where("namespace = ? AND plugin_name = ?", namespace, pluginName).Find(&records).Error; err != nil {
 		return nil, err
 	}
 	return records, nil

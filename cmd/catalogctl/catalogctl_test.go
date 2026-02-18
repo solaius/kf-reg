@@ -699,6 +699,163 @@ func TestInferColumns(t *testing.T) {
 	}
 }
 
+// --- Namespace tests ---
+
+func TestClientSendsNamespaceHeader(t *testing.T) {
+	var receivedHeader string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedHeader = r.Header.Get("X-Namespace")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	}))
+	defer srv.Close()
+
+	client := &catalogClient{
+		baseURL:   srv.URL,
+		namespace: "team-a",
+		http:      srv.Client(),
+	}
+
+	var result map[string]any
+	if err := client.getJSON("/api/plugins", &result); err != nil {
+		t.Fatalf("getJSON failed: %v", err)
+	}
+
+	if receivedHeader != "team-a" {
+		t.Errorf("X-Namespace header = %q, want %q", receivedHeader, "team-a")
+	}
+}
+
+func TestClientNoNamespaceHeaderWhenEmpty(t *testing.T) {
+	var receivedHeader string
+	var hasHeader bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedHeader = r.Header.Get("X-Namespace")
+		_, hasHeader = r.Header["X-Namespace"]
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	}))
+	defer srv.Close()
+
+	client := &catalogClient{
+		baseURL:   srv.URL,
+		namespace: "",
+		http:      srv.Client(),
+	}
+
+	var result map[string]any
+	if err := client.getJSON("/api/plugins", &result); err != nil {
+		t.Fatalf("getJSON failed: %v", err)
+	}
+
+	if hasHeader {
+		t.Errorf("X-Namespace header should not be set, got %q", receivedHeader)
+	}
+}
+
+func TestClientNamespaceOnPost(t *testing.T) {
+	var receivedHeader string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedHeader = r.Header.Get("X-Namespace")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	}))
+	defer srv.Close()
+
+	client := &catalogClient{
+		baseURL:   srv.URL,
+		namespace: "team-b",
+		http:      srv.Client(),
+	}
+
+	var result map[string]any
+	body := map[string]string{"action": "tag"}
+	if err := client.postJSON("/api/test", body, &result); err != nil {
+		t.Fatalf("postJSON failed: %v", err)
+	}
+
+	if receivedHeader != "team-b" {
+		t.Errorf("X-Namespace header = %q, want %q", receivedHeader, "team-b")
+	}
+}
+
+func TestNamespacesHTTP(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/tenancy/v1alpha1/namespaces" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		resp := map[string]any{
+			"namespaces": []string{"team-a", "team-b"},
+			"mode":       "namespace",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	client := &catalogClient{baseURL: srv.URL, http: srv.Client()}
+
+	var resp struct {
+		Namespaces []string `json:"namespaces"`
+		Mode       string   `json:"mode"`
+	}
+	if err := client.getJSON("/api/tenancy/v1alpha1/namespaces", &resp); err != nil {
+		t.Fatalf("getJSON failed: %v", err)
+	}
+
+	if resp.Mode != "namespace" {
+		t.Errorf("Mode = %q, want %q", resp.Mode, "namespace")
+	}
+	if len(resp.Namespaces) != 2 {
+		t.Fatalf("expected 2 namespaces, got %d", len(resp.Namespaces))
+	}
+	if resp.Namespaces[0] != "team-a" {
+		t.Errorf("first namespace = %q, want %q", resp.Namespaces[0], "team-a")
+	}
+}
+
+func TestResolvedNamespace_Flag(t *testing.T) {
+	// Save and restore
+	oldNs := namespace
+	defer func() { namespace = oldNs }()
+
+	namespace = "from-flag"
+	t.Setenv("CATALOG_NAMESPACE", "from-env")
+
+	got := resolvedNamespace()
+	if got != "from-flag" {
+		t.Errorf("resolvedNamespace() = %q, want %q (flag should have priority)", got, "from-flag")
+	}
+}
+
+func TestResolvedNamespace_EnvVar(t *testing.T) {
+	oldNs := namespace
+	defer func() { namespace = oldNs }()
+
+	namespace = ""
+	t.Setenv("CATALOG_NAMESPACE", "from-env")
+
+	got := resolvedNamespace()
+	if got != "from-env" {
+		t.Errorf("resolvedNamespace() = %q, want %q (env var should be used when flag is empty)", got, "from-env")
+	}
+}
+
+func TestResolvedNamespace_Default(t *testing.T) {
+	oldNs := namespace
+	defer func() { namespace = oldNs }()
+
+	namespace = ""
+	t.Setenv("CATALOG_NAMESPACE", "")
+
+	got := resolvedNamespace()
+	if got != "" {
+		t.Errorf("resolvedNamespace() = %q, want %q (should return empty when nothing is set)", got, "")
+	}
+}
+
 // --- Test helpers ---
 
 func sampleModelPlugin() pluginInfo {

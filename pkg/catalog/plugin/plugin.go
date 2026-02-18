@@ -198,4 +198,9 @@ type Config struct {
 
 	// ConfigPaths are the paths to all sources.yaml files being used.
 	ConfigPaths []string
+
+	// Namespace is the default namespace for this plugin's operations.
+	// In single-tenant mode this is "default"; in multi-tenant mode
+	// it may be empty (resolved per-request from context).
+	Namespace string
 }

@@ -96,11 +96,42 @@ prod-doc/
 │   ├── security-analysis.md      # Security review
 │   └── testing-coverage.md       # Test coverage
 │
-└── extensibility/                 # Extending the registry
+├── extensibility/                 # Extending the registry
+│   ├── README.md
+│   ├── asset-type-framework.md   # Framework overview
+│   ├── adding-new-assets.md      # Step-by-step guide
+│   └── proposed-assets.md        # Future asset types
+│
+└── catalog_of_catalogs/          # Catalog-of-Catalogs Platform
     ├── README.md
-    ├── asset-type-framework.md   # Framework overview
-    ├── adding-new-assets.md      # Step-by-step guide
-    └── proposed-assets.md        # Future asset types
+    ├── plugin-framework/         # Plugin architecture and lifecycle
+    │   ├── README.md
+    │   ├── architecture.md       # Core interfaces, registry, server
+    │   ├── creating-plugins.md   # Plugin creation guide
+    │   └── configuration.md      # sources.yaml, env vars, flags
+    ├── source-management/        # Source CRUD, persistence, validation
+    │   ├── README.md
+    │   ├── config-stores.md      # File and K8s config stores
+    │   ├── validation-pipeline.md # Multi-layer validation
+    │   └── refresh-and-diagnostics.md # Refresh, rate limits
+    ├── universal-assets/         # Universal asset framework
+    │   ├── README.md
+    │   ├── capabilities-discovery.md # V2 capabilities schema
+    │   ├── asset-contract.md     # AssetResource, overlay store
+    │   └── action-framework.md   # Actions, dry-run, builtins
+    ├── plugins/                  # Concrete plugin documentation
+    │   ├── README.md
+    │   ├── model-and-mcp-plugins.md # Model + MCP plugins
+    │   └── asset-type-plugins.md # Knowledge, Prompts, Agents, etc.
+    ├── operations/               # Deployment and security
+    │   ├── README.md
+    │   ├── deployment.md         # Docker, K8s, health probes
+    │   └── security.md           # RBAC, JWT, SecretRef
+    └── clients/                  # Client surfaces
+        ├── README.md
+        ├── bff-integration.md    # BFF proxy handlers
+        ├── generic-ui.md         # Generic React components
+        └── catalogctl-and-conformance.md # CLI + test suite
 ```
 
 ## Quick Navigation
@@ -131,6 +162,7 @@ prod-doc/
 |---------|-------------|------|
 | **MCP Catalog** | Model Context Protocol server registry | [MCP Docs](./mcp-catalog/README.md) |
 | **Extensibility** | Adding new asset types | [Extensibility Docs](./extensibility/README.md) |
+| **Catalog of Catalogs** | Multi-plugin catalog platform (8 asset types) | [Catalog of Catalogs](./catalog_of_catalogs/README.md) |
 
 ### Quality & Review
 
@@ -158,6 +190,7 @@ prod-doc/
 | Model Registry | v1alpha3 | Current |
 | Model Catalog | v1alpha1 | Current |
 | MCP Catalog | v1alpha1 | Feature Branch |
+| Catalog Server | v1alpha1 | Feature Branch |
 
 ## Repository Links
 

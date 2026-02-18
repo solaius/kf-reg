@@ -9,6 +9,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+
+	"github.com/kubeflow/model-registry/pkg/tenancy"
 )
 
 // VersionResponse is the API response for a version.
@@ -72,9 +74,10 @@ func listVersionsHandler(versionStore *VersionStore, govStore *GovernanceStore) 
 		pluginName := chi.URLParam(r, "plugin")
 		kind := chi.URLParam(r, "kind")
 		name := chi.URLParam(r, "name")
+		ns := tenancy.NamespaceFromContext(r.Context())
 
 		// Get governance record to find assetUID.
-		record, err := govStore.Get(pluginName, kind, name)
+		record, err := govStore.Get(ns, pluginName, kind, name)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to load governance record: %v", err))
 			return
@@ -122,6 +125,7 @@ func createVersionHandler(versionStore *VersionStore, govStore *GovernanceStore,
 		pluginName := chi.URLParam(r, "plugin")
 		kind := chi.URLParam(r, "kind")
 		name := chi.URLParam(r, "name")
+		ns := tenancy.NamespaceFromContext(r.Context())
 		actor := extractActor(r)
 
 		var req struct {
@@ -139,7 +143,7 @@ func createVersionHandler(versionStore *VersionStore, govStore *GovernanceStore,
 
 		// Get or create governance record.
 		uid := fmt.Sprintf("%s:%s:%s", pluginName, kind, name)
-		govRecord, err := govStore.EnsureExists(pluginName, kind, name, uid, actor)
+		govRecord, err := govStore.EnsureExists(ns, pluginName, kind, name, uid, actor)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to get governance record: %v", err))
 			return
@@ -150,6 +154,7 @@ func createVersionHandler(versionStore *VersionStore, govStore *GovernanceStore,
 
 		versionRecord := &AssetVersionRecord{
 			ID:                 uuid.New().String(),
+			Namespace:          ns,
 			AssetUID:           govRecord.AssetUID,
 			VersionID:          fmt.Sprintf("%s:%s", req.VersionLabel, uuid.New().String()[:8]),
 			VersionLabel:       req.VersionLabel,
@@ -171,6 +176,7 @@ func createVersionHandler(versionStore *VersionStore, govStore *GovernanceStore,
 		// Emit audit event.
 		_ = auditStore.Append(&AuditEventRecord{
 			ID:            uuid.New().String(),
+			Namespace:     ns,
 			CorrelationID: uuid.New().String(),
 			EventType:     "governance.version.created",
 			Actor:         actor,
@@ -196,8 +202,9 @@ func listBindingsHandler(bindingStore *BindingStore) http.HandlerFunc {
 		pluginName := chi.URLParam(r, "plugin")
 		kind := chi.URLParam(r, "kind")
 		name := chi.URLParam(r, "name")
+		ns := tenancy.NamespaceFromContext(r.Context())
 
-		records, err := bindingStore.ListBindings(pluginName, kind, name)
+		records, err := bindingStore.ListBindings(ns, pluginName, kind, name)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to list bindings: %v", err))
 			return
@@ -222,6 +229,7 @@ func setBindingHandler(bindingStore *BindingStore, versionStore *VersionStore, g
 		kind := chi.URLParam(r, "kind")
 		name := chi.URLParam(r, "name")
 		environment := chi.URLParam(r, "environment")
+		ns := tenancy.NamespaceFromContext(r.Context())
 		actor := extractActor(r)
 
 		var req struct {
@@ -237,7 +245,7 @@ func setBindingHandler(bindingStore *BindingStore, versionStore *VersionStore, g
 		}
 
 		// Get governance record.
-		govRecord, err := govStore.Get(pluginName, kind, name)
+		govRecord, err := govStore.Get(ns, pluginName, kind, name)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to load governance record: %v", err))
 			return
@@ -276,7 +284,7 @@ func setBindingHandler(bindingStore *BindingStore, versionStore *VersionStore, g
 
 		// Get current binding for this env (if any) to record previous_version_id.
 		var previousVersionID string
-		existing, err := bindingStore.GetBinding(pluginName, kind, name, environment)
+		existing, err := bindingStore.GetBinding(ns, pluginName, kind, name, environment)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to check existing binding: %v", err))
 			return
@@ -288,6 +296,7 @@ func setBindingHandler(bindingStore *BindingStore, versionStore *VersionStore, g
 		now := time.Now()
 		bindingRecord := &EnvBindingRecord{
 			ID:                uuid.New().String(),
+			Namespace:         ns,
 			Plugin:            pluginName,
 			AssetKind:         kind,
 			AssetName:         name,
@@ -307,6 +316,7 @@ func setBindingHandler(bindingStore *BindingStore, versionStore *VersionStore, g
 		// Emit audit event.
 		_ = auditStore.Append(&AuditEventRecord{
 			ID:            uuid.New().String(),
+			Namespace:     ns,
 			CorrelationID: uuid.New().String(),
 			EventType:     "governance.promotion.bound",
 			Actor:         actor,

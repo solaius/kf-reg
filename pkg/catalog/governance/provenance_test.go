@@ -255,7 +255,7 @@ func TestPromotionActionHandler_VersionCreateWithVerifiedProvenance(t *testing.T
 	})
 
 	ctx := context.Background()
-	result, err := h.HandleAction(ctx, "mcp", "mcpserver", "filesystem", "alice", "version.create", map[string]any{
+	result, err := h.HandleAction(ctx, "default", "mcp", "mcpserver", "filesystem", "alice", "version.create", map[string]any{
 		"versionLabel": "v2.0-verified",
 	}, false)
 	require.NoError(t, err)
@@ -284,7 +284,7 @@ func TestPromotionActionHandler_VersionCreateWithProvenance(t *testing.T) {
 	})
 
 	ctx := context.Background()
-	result, err := h.HandleAction(ctx, "mcp", "mcpserver", "filesystem", "alice", "version.create", map[string]any{
+	result, err := h.HandleAction(ctx, "default", "mcp", "mcpserver", "filesystem", "alice", "version.create", map[string]any{
 		"versionLabel": "v1.0",
 	}, false)
 	require.NoError(t, err)
@@ -306,7 +306,7 @@ func TestPromotionActionHandler_VersionCreateWithoutProvenance(t *testing.T) {
 	// No provenance extractor set -- provenance fields should remain empty.
 
 	ctx := context.Background()
-	result, err := h.HandleAction(ctx, "mcp", "mcpserver", "filesystem", "alice", "version.create", map[string]any{
+	result, err := h.HandleAction(ctx, "default", "mcp", "mcpserver", "filesystem", "alice", "version.create", map[string]any{
 		"versionLabel": "v1.0",
 	}, false)
 	require.NoError(t, err)

@@ -587,6 +587,110 @@ func TestServerHealthzAndLivezAreSameHandler(t *testing.T) {
 	Reset()
 }
 
+func TestNamespacesHandler_SingleMode(t *testing.T) {
+	Reset()
+
+	cfg := &CatalogSourcesConfig{
+		Catalogs: map[string]CatalogSection{},
+	}
+
+	server := NewServer(cfg, []string{}, nil, nil)
+	err := server.Init(context.Background())
+	require.NoError(t, err)
+
+	router := server.MountRoutes()
+
+	req := httptest.NewRequest("GET", "/api/tenancy/v1alpha1/namespaces", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+
+	var response struct {
+		Namespaces []string `json:"namespaces"`
+		Mode       string   `json:"mode"`
+	}
+	err = json.Unmarshal(rec.Body.Bytes(), &response)
+	require.NoError(t, err)
+
+	// Default mode is empty string (treated as single), should return ["default"]
+	assert.Equal(t, []string{"default"}, response.Namespaces)
+
+	Reset()
+}
+
+func TestNamespacesHandler_NamespaceMode(t *testing.T) {
+	Reset()
+
+	cfg := &CatalogSourcesConfig{
+		Catalogs: map[string]CatalogSection{},
+	}
+
+	server := NewServer(cfg, []string{}, nil, nil, WithTenancyMode("namespace"))
+	err := server.Init(context.Background())
+	require.NoError(t, err)
+
+	// Set CATALOG_NAMESPACES env var
+	t.Setenv("CATALOG_NAMESPACES", "team-a, team-b, team-c")
+
+	router := server.MountRoutes()
+
+	req := httptest.NewRequest("GET", "/api/tenancy/v1alpha1/namespaces", nil)
+	// Namespace header is required in namespace mode by the middleware
+	req.Header.Set("X-Namespace", "team-a")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var response struct {
+		Namespaces []string `json:"namespaces"`
+		Mode       string   `json:"mode"`
+	}
+	err = json.Unmarshal(rec.Body.Bytes(), &response)
+	require.NoError(t, err)
+
+	assert.Equal(t, "namespace", response.Mode)
+	assert.Equal(t, []string{"team-a", "team-b", "team-c"}, response.Namespaces)
+
+	Reset()
+}
+
+func TestNamespacesHandler_NamespaceMode_NoEnvVar(t *testing.T) {
+	Reset()
+
+	cfg := &CatalogSourcesConfig{
+		Catalogs: map[string]CatalogSection{},
+	}
+
+	server := NewServer(cfg, []string{}, nil, nil, WithTenancyMode("namespace"))
+	err := server.Init(context.Background())
+	require.NoError(t, err)
+
+	router := server.MountRoutes()
+
+	req := httptest.NewRequest("GET", "/api/tenancy/v1alpha1/namespaces", nil)
+	req.Header.Set("X-Namespace", "default")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var response struct {
+		Namespaces []string `json:"namespaces"`
+		Mode       string   `json:"mode"`
+	}
+	err = json.Unmarshal(rec.Body.Bytes(), &response)
+	require.NoError(t, err)
+
+	assert.Equal(t, "namespace", response.Mode)
+	// Without env var, should fall back to ["default"]
+	assert.Equal(t, []string{"default"}, response.Namespaces)
+
+	Reset()
+}
+
 func TestServerReadyEndpointBeforeInit(t *testing.T) {
 	Reset()
 

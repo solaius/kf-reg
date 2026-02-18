@@ -3,6 +3,8 @@ package plugin
 import (
 	"context"
 	"fmt"
+
+	"github.com/kubeflow/model-registry/pkg/tenancy"
 )
 
 // BuiltinActionHandler handles common asset actions (tag, annotate, deprecate)
@@ -55,7 +57,7 @@ func BuiltinActionDefinitions() []ActionDefinition {
 }
 
 // HandleTag adds or replaces tags on an entity.
-func (h *BuiltinActionHandler) HandleTag(_ context.Context, entityUID string, req ActionRequest) (*ActionResult, error) {
+func (h *BuiltinActionHandler) HandleTag(ctx context.Context, entityUID string, req ActionRequest) (*ActionResult, error) {
 	tags, err := extractStringSlice(req.Params, "tags")
 	if err != nil {
 		return nil, fmt.Errorf("invalid tags parameter: %w", err)
@@ -70,7 +72,8 @@ func (h *BuiltinActionHandler) HandleTag(_ context.Context, entityUID string, re
 		}, nil
 	}
 
-	record, err := h.getOrCreateOverlay(entityUID)
+	ns := tenancy.NamespaceFromContext(ctx)
+	record, err := h.getOrCreateOverlay(ns, entityUID)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +92,7 @@ func (h *BuiltinActionHandler) HandleTag(_ context.Context, entityUID string, re
 }
 
 // HandleAnnotate adds or updates annotations on an entity.
-func (h *BuiltinActionHandler) HandleAnnotate(_ context.Context, entityUID string, req ActionRequest) (*ActionResult, error) {
+func (h *BuiltinActionHandler) HandleAnnotate(ctx context.Context, entityUID string, req ActionRequest) (*ActionResult, error) {
 	annotations, err := extractStringMap(req.Params, "annotations")
 	if err != nil {
 		return nil, fmt.Errorf("invalid annotations parameter: %w", err)
@@ -104,7 +107,8 @@ func (h *BuiltinActionHandler) HandleAnnotate(_ context.Context, entityUID strin
 		}, nil
 	}
 
-	record, err := h.getOrCreateOverlay(entityUID)
+	ns := tenancy.NamespaceFromContext(ctx)
+	record, err := h.getOrCreateOverlay(ns, entityUID)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +134,7 @@ func (h *BuiltinActionHandler) HandleAnnotate(_ context.Context, entityUID strin
 }
 
 // HandleDeprecate changes the lifecycle phase to deprecated.
-func (h *BuiltinActionHandler) HandleDeprecate(_ context.Context, entityUID string, req ActionRequest) (*ActionResult, error) {
+func (h *BuiltinActionHandler) HandleDeprecate(ctx context.Context, entityUID string, req ActionRequest) (*ActionResult, error) {
 	phase := "deprecated"
 	if p, ok := req.Params["phase"]; ok {
 		if s, ok := p.(string); ok && s != "" {
@@ -147,7 +151,8 @@ func (h *BuiltinActionHandler) HandleDeprecate(_ context.Context, entityUID stri
 		}, nil
 	}
 
-	record, err := h.getOrCreateOverlay(entityUID)
+	ns := tenancy.NamespaceFromContext(ctx)
+	record, err := h.getOrCreateOverlay(ns, entityUID)
 	if err != nil {
 		return nil, err
 	}
@@ -166,13 +171,14 @@ func (h *BuiltinActionHandler) HandleDeprecate(_ context.Context, entityUID stri
 }
 
 // getOrCreateOverlay retrieves an existing overlay or creates a new empty one.
-func (h *BuiltinActionHandler) getOrCreateOverlay(entityUID string) (*OverlayRecord, error) {
-	record, err := h.overlayStore.Get(h.pluginName, h.entityKind, entityUID)
+func (h *BuiltinActionHandler) getOrCreateOverlay(namespace, entityUID string) (*OverlayRecord, error) {
+	record, err := h.overlayStore.Get(namespace, h.pluginName, h.entityKind, entityUID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get overlay: %w", err)
 	}
 	if record == nil {
 		record = &OverlayRecord{
+			Namespace:  namespace,
 			PluginName: h.pluginName,
 			EntityKind: h.entityKind,
 			EntityUID:  entityUID,

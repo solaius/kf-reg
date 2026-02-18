@@ -10,33 +10,51 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
+
+	"github.com/kubeflow/model-registry/pkg/authz"
+	"github.com/kubeflow/model-registry/pkg/jobs"
+	"github.com/kubeflow/model-registry/pkg/tenancy"
 )
 
 // managementRouter registers management routes for a plugin on the given router.
 // Management routes are sub-paths under the plugin's base path.
 // The server parameter is used for config persistence; it may be nil if no
 // ConfigStore is configured (mutations remain in-memory only).
-func managementRouter(p CatalogPlugin, roleExtractor RoleExtractor, srv *Server) chi.Router {
+// When authorizer is non-nil, fine-grained SAR-based permission checks are used
+// instead of the simple RoleExtractor-based model.
+func managementRouter(p CatalogPlugin, roleExtractor RoleExtractor, srv *Server, authorizer authz.Authorizer) chi.Router {
 	r := chi.NewRouter()
 
 	configKey := pluginConfigKey(p)
 
 	pluginName := p.Name()
 
+	// guard wraps a handler with the appropriate authorization middleware.
+	// When an authz.Authorizer is configured, it uses fine-grained resource/verb
+	// checks via RequirePermission. Otherwise, it falls back to the legacy
+	// RoleExtractor-based RequireRole(RoleOperator) middleware.
+	guard := func(resource, verb string, h http.HandlerFunc) http.HandlerFunc {
+		if authorizer != nil {
+			return authz.RequirePermission(authorizer, resource, verb)(h).ServeHTTP
+		}
+		return RequireRole(RoleOperator, roleExtractor)(h).ServeHTTP
+	}
+
 	// Sources management (requires SourceManager)
 	if sm, ok := p.(SourceManager); ok {
 		r.Get("/sources", sourcesListHandler(sm, srv, pluginName))
-		r.Post("/validate-source", RequireRole(RoleOperator, roleExtractor)(http.HandlerFunc(validateHandler(sm))).ServeHTTP)
-		r.Post("/apply-source", RequireRole(RoleOperator, roleExtractor)(http.HandlerFunc(applyHandler(sm, srv, configKey, p))).ServeHTTP)
-		r.Post("/sources/{sourceId}/enable", RequireRole(RoleOperator, roleExtractor)(http.HandlerFunc(enableHandler(sm, srv, configKey))).ServeHTTP)
-		r.Delete("/sources/{sourceId}", RequireRole(RoleOperator, roleExtractor)(http.HandlerFunc(deleteSourceHandler(sm, srv, configKey, pluginName))).ServeHTTP)
+		r.Post("/validate-source", guard(authz.ResourceCatalogSources, authz.VerbUpdate, validateHandler(sm)))
+		r.Post("/apply-source", guard(authz.ResourceCatalogSources, authz.VerbCreate, applyHandler(sm, srv, configKey, p)))
+		r.Post("/sources/{sourceId}/enable", guard(authz.ResourceCatalogSources, authz.VerbUpdate, enableHandler(sm, srv, configKey)))
+		r.Delete("/sources/{sourceId}", guard(authz.ResourceCatalogSources, authz.VerbDelete, deleteSourceHandler(sm, srv, configKey, pluginName)))
 
 		// Detailed validation with multi-layer breakdown.
-		r.Post("/sources/{sourceId}:validate", RequireRole(RoleOperator, roleExtractor)(http.HandlerFunc(detailedValidateHandler(sm))).ServeHTTP)
+		r.Post("/sources/{sourceId}:validate", guard(authz.ResourceCatalogSources, authz.VerbUpdate, detailedValidateHandler(sm)))
 
 		// Revision history and rollback (requires ConfigStore).
 		r.Get("/sources/{sourceId}/revisions", revisionsHandler(srv))
-		r.Post("/sources/{sourceId}:rollback", RequireRole(RoleOperator, roleExtractor)(http.HandlerFunc(rollbackHandler(srv, configKey, p))).ServeHTTP)
+		r.Post("/sources/{sourceId}:rollback", guard(authz.ResourceCatalogSources, authz.VerbUpdate, rollbackHandler(srv, configKey, p)))
 	}
 
 	// Refresh (requires RefreshProvider)
@@ -45,8 +63,8 @@ func managementRouter(p CatalogPlugin, roleExtractor RoleExtractor, srv *Server)
 		if srv != nil {
 			rl = srv.rateLimiter
 		}
-		r.Post("/refresh", RequireRole(RoleOperator, roleExtractor)(http.HandlerFunc(refreshAllHandler(rp, rl, pluginName, srv))).ServeHTTP)
-		r.Post("/refresh/{sourceId}", RequireRole(RoleOperator, roleExtractor)(http.HandlerFunc(refreshSourceHandler(rp, rl, pluginName, srv))).ServeHTTP)
+		r.Post("/refresh", guard(authz.ResourceJobs, authz.VerbCreate, refreshAllHandler(rp, rl, pluginName, srv)))
+		r.Post("/refresh/{sourceId}", guard(authz.ResourceJobs, authz.VerbCreate, refreshSourceHandler(rp, rl, pluginName, srv)))
 	}
 
 	// Diagnostics (read-only, available to viewers)
@@ -57,10 +75,10 @@ func managementRouter(p CatalogPlugin, roleExtractor RoleExtractor, srv *Server)
 	// Action endpoints (requires ActionProvider)
 	if _, ok := p.(ActionProvider); ok {
 		// Source-scoped actions.
-		r.Post("/sources/{sourceId}:action", RequireRole(RoleOperator, roleExtractor)(http.HandlerFunc(actionHandler(p, ActionScopeSource))).ServeHTTP)
+		r.Post("/sources/{sourceId}:action", guard(authz.ResourceActions, authz.VerbExecute, actionHandler(p, ActionScopeSource)))
 
 		// Asset-scoped actions.
-		r.Post("/entities/{entityName}:action", RequireRole(RoleOperator, roleExtractor)(http.HandlerFunc(actionHandler(p, ActionScopeAsset))).ServeHTTP)
+		r.Post("/entities/{entityName}:action", guard(authz.ResourceActions, authz.VerbExecute, actionHandler(p, ActionScopeAsset)))
 
 		// Action discovery endpoints (read-only, available to all roles).
 		r.Get("/actions/source", actionsListHandler(p, ActionScopeSource))
@@ -89,9 +107,10 @@ func sourcesListHandler(sm SourceManager, srv *Server, pluginName string) http.H
 		}
 
 		// Build a lookup of persisted refresh statuses.
+		ns := tenancy.NamespaceFromContext(r.Context())
 		var statusMap map[string]*RefreshStatusRecord
 		if srv != nil {
-			records := srv.listRefreshStatuses(pluginName)
+			records := srv.listRefreshStatuses(ns, pluginName)
 			if len(records) > 0 {
 				statusMap = make(map[string]*RefreshStatusRecord, len(records))
 				for i := range records {
@@ -199,6 +218,11 @@ func applyHandler(sm SourceManager, srv *Server, configKey string, p CatalogPlug
 
 		result := ApplyResult{Status: "applied"}
 
+		// Invalidate discovery/capabilities cache after successful apply.
+		if srv != nil && srv.GetCacheManager() != nil {
+			srv.GetCacheManager().InvalidatePlugin(p.Name())
+		}
+
 		// Optionally trigger refresh after apply.
 		if input.RefreshAfterApply != nil && *input.RefreshAfterApply {
 			if rp, ok := p.(RefreshProvider); ok {
@@ -224,7 +248,8 @@ func applyHandler(sm SourceManager, srv *Server, configKey string, p CatalogPlug
 				}
 				// Persist refresh status after apply.
 				if srv != nil && result.RefreshResult != nil {
-					srv.saveRefreshStatus(p.Name(), input.ID, result.RefreshResult)
+					ns := tenancy.NamespaceFromContext(r.Context())
+					srv.saveRefreshStatus(ns, p.Name(), input.ID, result.RefreshResult)
 				}
 			}
 		}
@@ -293,7 +318,8 @@ func deleteSourceHandler(sm SourceManager, srv *Server, configKey string, plugin
 
 		// Clean up refresh status record for the deleted source.
 		if srv != nil {
-			srv.deleteRefreshStatus(pluginName, sourceID)
+			ns := tenancy.NamespaceFromContext(r.Context())
+			srv.deleteRefreshStatus(ns, pluginName, sourceID)
 		}
 
 		// Persist to ConfigStore if available.
@@ -313,9 +339,9 @@ func deleteSourceHandler(sm SourceManager, srv *Server, configKey string, plugin
 }
 
 // refreshAllHandler returns a handler that triggers a refresh of all sources.
-// It checks the rate limiter before proceeding. If rate limited, it returns
-// 429 with a Retry-After header. After a successful call, the refresh result
-// is persisted to the database via the Server.
+// When a job store is available, the refresh is enqueued as an async job and
+// 202 Accepted is returned with the job ID. Otherwise, the refresh is executed
+// synchronously. Rate limiting is checked before either path.
 func refreshAllHandler(rp RefreshProvider, rl *RefreshRateLimiter, pluginName string, srv *Server) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if rl != nil {
@@ -326,15 +352,53 @@ func refreshAllHandler(rp RefreshProvider, rl *RefreshRateLimiter, pluginName st
 			}
 		}
 
+		ns := tenancy.NamespaceFromContext(r.Context())
+		actor := "system"
+		if id, ok := authz.IdentityFromContext(r.Context()); ok {
+			actor = id.User
+		}
+
+		// Async path: enqueue a job if the job store is available.
+		if srv != nil && srv.jobStore != nil {
+			idempKey := fmt.Sprintf("%s:%s:_all", ns, pluginName)
+			job := &jobs.RefreshJob{
+				ID:             uuid.New().String(),
+				Namespace:      ns,
+				Plugin:         pluginName,
+				SourceID:       "_all",
+				RequestedBy:    actor,
+				RequestedAt:    time.Now(),
+				State:          jobs.JobStateQueued,
+				IdempotencyKey: idempKey,
+			}
+
+			enqueued, err := srv.jobStore.Enqueue(job)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to enqueue refresh job", err)
+				return
+			}
+
+			writeJSON(w, http.StatusAccepted, map[string]any{
+				"status": "queued",
+				"jobId":  enqueued.ID,
+			})
+			return
+		}
+
+		// Synchronous fallback.
 		result, err := rp.RefreshAll(r.Context())
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "refresh failed", err)
 			return
 		}
 
-		// Persist refresh status for "all" sources using a synthetic key.
 		if srv != nil && result != nil {
-			srv.saveRefreshStatus(pluginName, "_all", result)
+			srv.saveRefreshStatus(ns, pluginName, "_all", result)
+		}
+
+		// Invalidate cache after synchronous refresh completes.
+		if srv != nil && srv.GetCacheManager() != nil {
+			srv.GetCacheManager().InvalidatePlugin(pluginName)
 		}
 
 		writeJSON(w, http.StatusOK, result)
@@ -342,9 +406,9 @@ func refreshAllHandler(rp RefreshProvider, rl *RefreshRateLimiter, pluginName st
 }
 
 // refreshSourceHandler returns a handler that triggers a refresh of a single source.
-// It checks the rate limiter before proceeding. If rate limited, it returns
-// 429 with a Retry-After header. After a successful call, the refresh result
-// is persisted to the database via the Server.
+// When a job store is available, the refresh is enqueued as an async job and
+// 202 Accepted is returned with the job ID. Otherwise, the refresh is executed
+// synchronously. Rate limiting is checked before either path.
 func refreshSourceHandler(rp RefreshProvider, rl *RefreshRateLimiter, pluginName string, srv *Server) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sourceID := chi.URLParam(r, "sourceId")
@@ -361,15 +425,53 @@ func refreshSourceHandler(rp RefreshProvider, rl *RefreshRateLimiter, pluginName
 			}
 		}
 
+		ns := tenancy.NamespaceFromContext(r.Context())
+		actor := "system"
+		if id, ok := authz.IdentityFromContext(r.Context()); ok {
+			actor = id.User
+		}
+
+		// Async path: enqueue a job if the job store is available.
+		if srv != nil && srv.jobStore != nil {
+			idempKey := fmt.Sprintf("%s:%s:%s", ns, pluginName, sourceID)
+			job := &jobs.RefreshJob{
+				ID:             uuid.New().String(),
+				Namespace:      ns,
+				Plugin:         pluginName,
+				SourceID:       sourceID,
+				RequestedBy:    actor,
+				RequestedAt:    time.Now(),
+				State:          jobs.JobStateQueued,
+				IdempotencyKey: idempKey,
+			}
+
+			enqueued, err := srv.jobStore.Enqueue(job)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to enqueue refresh job", err)
+				return
+			}
+
+			writeJSON(w, http.StatusAccepted, map[string]any{
+				"status": "queued",
+				"jobId":  enqueued.ID,
+			})
+			return
+		}
+
+		// Synchronous fallback.
 		result, err := rp.Refresh(r.Context(), sourceID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "refresh failed", err)
 			return
 		}
 
-		// Persist refresh status.
 		if srv != nil && result != nil {
-			srv.saveRefreshStatus(pluginName, sourceID, result)
+			srv.saveRefreshStatus(ns, pluginName, sourceID, result)
+		}
+
+		// Invalidate cache after synchronous refresh completes.
+		if srv != nil && srv.GetCacheManager() != nil {
+			srv.GetCacheManager().InvalidatePlugin(pluginName)
 		}
 
 		writeJSON(w, http.StatusOK, result)
