@@ -141,12 +141,10 @@ func (app *App) AttachModelCatalogRESTClient(next func(http.ResponseWriter, *htt
 		headers := http.Header{}
 
 		// The BFF is a trusted backend component; always request operator-level
-		// access from the catalog-server so management endpoints (validate,
-		// apply, rollback, refresh, etc.) are not blocked by RBAC.
+		// access from the catalog-server so management endpoints are not blocked by RBAC.
 		headers.Set("X-User-Role", "operator")
 
 		// Forward the namespace to the catalog server via the X-Namespace header.
-		// The catalog server's tenancy middleware reads this header for multi-tenant mode.
 		if ns, ok := r.Context().Value(constants.NamespaceHeaderParameterKey).(string); ok && ns != "" {
 			headers.Set("X-Namespace", ns)
 		}

@@ -9,8 +9,8 @@ import (
 	"github.com/kubeflow/model-registry/ui/bff/internal/models"
 )
 
-const sourcesPath = "/api/model_catalog/v1alpha1/sources"
-const filterOptionPath = "/api/model_catalog/v1alpha1/models/filter_options"
+const sourcesPath = "/sources"
+const filterOptionPath = "/models/filter_options"
 
 type CatalogSourcesInterface interface {
 	GetAllCatalogSources(client httpclient.HTTPClientInterface, pageValues url.Values) (*models.CatalogSourceList, error)

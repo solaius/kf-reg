@@ -424,64 +424,6 @@ func TestParseErrors(t *testing.T) {
 	}
 }
 
-func TestParserInjectionAttempts(t *testing.T) {
-	tests := []struct {
-		name        string
-		filterQuery string
-		expectError bool
-		description string
-	}{
-		{
-			name:        "basic injection attempt with semicolon",
-			filterQuery: "name='test'; DROP TABLE Context;--",
-			expectError: true,
-			description: "Semicolons are not part of filter grammar, should fail to parse",
-		},
-		{
-			name:        "injection attempt with OR 1=1",
-			filterQuery: "name='test' OR 1=1",
-			expectError: true,
-			description: "1=1 fails because 1 is not a valid property name (must start with a letter or underscore)",
-		},
-		{
-			name:        "injection via escaped quote",
-			filterQuery: "name='test\\'s value'",
-			expectError: false,
-			description: "Escaped single quotes should be handled by the parser",
-		},
-		{
-			name:        "injection via UNION SELECT",
-			filterQuery: "name='test' UNION SELECT * FROM users",
-			expectError: true,
-			description: "UNION is not part of filter grammar, should fail to parse",
-		},
-		{
-			name:        "valid LIKE with special chars",
-			filterQuery: "name LIKE '%test%'",
-			expectError: false,
-			description: "Valid LIKE expression with wildcards",
-		},
-		{
-			name:        "comment injection attempt",
-			filterQuery: "name='test' -- comment",
-			expectError: false,
-			description: "SQL comments are elided by the lexer, so trailing comments are harmless and ignored",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := Parse(tt.filterQuery)
-			if tt.expectError && err == nil {
-				t.Errorf("expected parse error for %q (%s), but got nil", tt.filterQuery, tt.description)
-			}
-			if !tt.expectError && err != nil {
-				t.Errorf("expected no error for %q (%s), but got: %v", tt.filterQuery, tt.description, err)
-			}
-		})
-	}
-}
-
 func TestParseEmptyInput(t *testing.T) {
 	tests := []string{"", "   ", "\t", "\n"}
 

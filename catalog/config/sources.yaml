@@ -36,7 +36,6 @@ catalogs:
         labels: ["MCP Servers"]
         properties:
           yamlCatalogPath: "../plugins/mcp/data/mcp-servers.yaml"
-          loaderConfigPath: "./mcp-loader-config.yaml"
   knowledge:
     sources:
       - id: knowledge-default

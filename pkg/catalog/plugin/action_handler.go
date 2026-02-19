@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -21,12 +22,15 @@ func actionHandler(p CatalogPlugin, scope ActionScope) http.HandlerFunc {
 		}
 
 		// Extract target ID from the URL. For source scope, it's
-		// the sourceId param; for asset scope, it's the entityName param.
+		// the sourceId param; for asset scope, it's extracted from the
+		// wildcard (supports multi-segment names like "group/name").
 		var targetID string
 		if scope == ActionScopeSource {
 			targetID = chi.URLParam(r, "sourceId")
 		} else {
-			targetID = chi.URLParam(r, "entityName")
+			targetID = chi.URLParam(r, "*")
+			// Strip the ":action" suffix from the wildcard match.
+			targetID = strings.TrimSuffix(targetID, ":action")
 		}
 
 		var req ActionRequest

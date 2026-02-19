@@ -62,7 +62,7 @@ func SetupEnvTest(input TestEnvInput) (*envtest.Environment, kubernetes.Interfac
 		if err != nil {
 			input.Logger.Error("failed to find project root", slog.String("error", err.Error()))
 			input.Cancel()
-			return nil, nil, fmt.Errorf("failed to find project root: %w", err)
+			os.Exit(1)
 		}
 		binaryAssetsDir = filepath.Join(projectRoot, "bin", "k8s",
 			fmt.Sprintf("1.29.0-%s-%s", runtime.GOOS, runtime.GOARCH))
@@ -76,14 +76,14 @@ func SetupEnvTest(input TestEnvInput) (*envtest.Environment, kubernetes.Interfac
 	if err != nil {
 		input.Logger.Error("failed to start envtest", slog.String("error", err.Error()))
 		input.Cancel()
-		return nil, nil, fmt.Errorf("failed to start envtest: %w", err)
+		os.Exit(1)
 	}
 
 	clientset, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
 		input.Logger.Error("failed to create clientset", slog.String("error", err.Error()))
 		input.Cancel()
-		return nil, nil, fmt.Errorf("failed to create clientset: %w", err)
+		os.Exit(1)
 	}
 
 	// bootstrap resources
@@ -91,7 +91,7 @@ func SetupEnvTest(input TestEnvInput) (*envtest.Environment, kubernetes.Interfac
 	if err != nil {
 		input.Logger.Error("failed to setup mock data", slog.String("error", err.Error()))
 		input.Cancel()
-		return nil, nil, fmt.Errorf("failed to setup mock data: %w", err)
+		os.Exit(1)
 	}
 
 	return testEnv, clientset, nil

@@ -105,7 +105,6 @@ type EnvConfig struct {
 
 	// ─── CATALOG SERVER ─────────────────────────────────────────
 	// CatalogServerURL is the base URL of the catalog-server.
-	// Required in real mode (when MockMRCatalogClient is false).
 	// Can be set via --catalog-server-url flag or CATALOG_SERVER_BASE_URL env var.
 	CatalogServerURL string
 

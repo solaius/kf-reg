@@ -119,7 +119,6 @@ The CLI communicates with the catalog-server HTTP API.`,
 	rootCmd.AddCommand(newSourcesCmd())
 	rootCmd.AddCommand(newRefreshCmd())
 	rootCmd.AddCommand(newStatusCmd())
-	rootCmd.AddCommand(newMcpCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)

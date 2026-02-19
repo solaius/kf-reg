@@ -76,12 +76,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Fail fast: in real mode (no mock), catalog-server URL is required
-	if !cfg.MockMRCatalogClient && cfg.CatalogServerURL == "" {
-		logger.Error("CATALOG_SERVER_BASE_URL is required in real mode; use --mock-mr-catalog-client for dev mode")
-		os.Exit(1)
-	}
-
 	// Only use for logging errors about logging configuration.
 	slog.SetDefault(logger)
 

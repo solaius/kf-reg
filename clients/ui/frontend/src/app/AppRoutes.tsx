@@ -8,10 +8,8 @@ import ModelRegistryRoutes from './pages/modelRegistry/ModelRegistryRoutes';
 import ModelCatalogRoutes from './pages/modelCatalog/ModelCatalogRoutes';
 import ModelCatalogSettingsRoutes from './pages/modelCatalogSettings/ModelCatalogSettingsRoutes';
 import CatalogManagementRoutes from './pages/catalogManagement/CatalogManagementRoutes';
-import McpCatalogRoutes from './pages/mcpCatalog/McpCatalogRoutes';
 import GenericCatalogRoutes from './pages/genericCatalog/GenericCatalogRoutes';
 import { modelCatalogUrl } from './routes/modelCatalog/catalogModel';
-import { mcpCatalogUrl, MCP_CATALOG_PAGE_TITLE } from './routes/mcpCatalog/mcpCatalog';
 import {
   catalogManagementUrl,
   CATALOG_MANAGEMENT_PAGE_TITLE,
@@ -69,10 +67,6 @@ export const useNavData = (): NavDataItem[] => {
       path: modelCatalogUrl(),
     });
     baseNavItems.push({
-      label: MCP_CATALOG_PAGE_TITLE,
-      path: mcpCatalogUrl(),
-    });
-    baseNavItems.push({
       label: 'Catalog',
       path: '/catalog',
     });
@@ -95,7 +89,6 @@ const AppRoutes: React.FC = () => {
       {(isStandalone || isFederated) && (
         <>
           <Route path={`${modelCatalogUrl()}/*`} element={<ModelCatalogRoutes />} />
-          <Route path={`${mcpCatalogUrl()}/*`} element={<McpCatalogRoutes />} />
           <Route path={`${catalogSettingsUrl()}/*`} element={<ModelCatalogSettingsRoutes />} />
           <Route path={`${catalogManagementUrl()}/*`} element={<CatalogManagementRoutes />} />
           <Route path="/catalog/*" element={<GenericCatalogRoutes />} />

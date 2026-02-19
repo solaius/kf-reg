@@ -75,36 +75,21 @@ func (p *McpServerCatalogPlugin) Init(ctx context.Context, cfg plugin.Config) er
 
 	p.logger.Info("initializing mcp plugin")
 
-	// Build config paths from source properties or origins
-	paths := make([]string, 0)
+	// Build config paths from source loaderConfigPath overrides only.
+	// Legacy loader config files have a flat "catalogs:" format that differs
+	// from the framework's sources.yaml (apiVersion/kind). If no explicit
+	// loaderConfigPath is set, we inject framework sources directly instead.
+	var loaderPaths []string
 	pathsSet := make(map[string]bool)
 	for _, src := range cfg.Section.Sources {
-		// Check for loaderConfigPath property first (allows separate loader config)
 		if loaderPath, ok := src.Properties["loaderConfigPath"].(string); ok && loaderPath != "" {
-			// Resolve relative to source origin directory
 			if !filepath.IsAbs(loaderPath) && src.Origin != "" {
 				loaderPath = filepath.Join(filepath.Dir(src.Origin), loaderPath)
 			}
 			if !pathsSet[loaderPath] {
-				paths = append(paths, loaderPath)
+				loaderPaths = append(loaderPaths, loaderPath)
 				pathsSet[loaderPath] = true
 			}
-		} else if src.Origin != "" && !pathsSet[src.Origin] {
-			paths = append(paths, src.Origin)
-			pathsSet[src.Origin] = true
-		}
-	}
-	if len(paths) == 0 {
-		paths = cfg.ConfigPaths
-	}
-
-	// Convert to absolute paths
-	absPaths := make([]string, 0, len(paths))
-	for _, path := range paths {
-		if absPath, err := filepath.Abs(path); err == nil {
-			absPaths = append(absPaths, absPath)
-		} else {
-			absPaths = append(absPaths, path)
 		}
 	}
 
@@ -121,10 +106,35 @@ func (p *McpServerCatalogPlugin) Init(ctx context.Context, cfg plugin.Config) er
 		return fmt.Errorf("failed to register YAML provider: %w", err)
 	}
 
-	// Create the loader
-	p.loader = catalog.NewLoader(services, absPaths, registry)
+	// Create the loader (with explicit loader config paths, or empty)
+	p.loader = catalog.NewLoader(services, loaderPaths, registry)
 
-	p.logger.Info("mcp plugin initialized", "paths", absPaths)
+	// When no loader config files are specified, inject framework sources
+	// directly into the loader's SourceCollection. This uses the source
+	// definitions from sources.yaml as parsed by the plugin framework.
+	if len(loaderPaths) == 0 && len(cfg.Section.Sources) > 0 {
+		frameworkSources := make(map[string]pkgcatalog.Source, len(cfg.Section.Sources))
+		for _, src := range cfg.Section.Sources {
+			origin := src.Origin
+			if origin == "" && len(cfg.ConfigPaths) > 0 {
+				origin = cfg.ConfigPaths[0]
+			}
+			frameworkSources[src.ID] = pkgcatalog.Source{
+				ID:         src.ID,
+				Name:       src.Name,
+				Type:       src.Type,
+				Enabled:    src.Enabled,
+				Labels:     src.Labels,
+				Properties: src.Properties,
+				Origin:     origin,
+			}
+		}
+		if err := p.loader.Sources.Merge("framework", frameworkSources); err != nil {
+			return fmt.Errorf("failed to inject framework sources: %w", err)
+		}
+	}
+
+	p.logger.Info("mcp plugin initialized", "loaderPaths", loaderPaths, "frameworkSources", len(cfg.Section.Sources))
 	return nil
 }
 
@@ -132,7 +142,7 @@ func (p *McpServerCatalogPlugin) Init(ctx context.Context, cfg plugin.Config) er
 func (p *McpServerCatalogPlugin) initServices(db *gorm.DB) (service.Services, error) {
 	spec := service.DatastoreSpec()
 
-	connector, err := datastore.NewConnector("embedmd", &embedmd.EmbedMDConfig{DB: db, SkipMigrations: true})
+	connector, err := datastore.NewConnector("embedmd", &embedmd.EmbedMDConfig{DB: db})
 	if err != nil {
 		return service.Services{}, fmt.Errorf("failed to create connector: %w", err)
 	}

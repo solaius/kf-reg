@@ -12,13 +12,8 @@ import ModelCatalogGalleryView from './ModelCatalogGalleryView';
 
 const ModelCatalog: React.FC = () => {
   const [searchTerm, setSearchTerm] = React.useState('');
-  const {
-    selectedSourceLabel,
-    filterData,
-    clearAllFilters,
-    catalogSourcesLoaded,
-    catalogSourcesLoadError,
-  } = React.useContext(ModelCatalogContext);
+  const { selectedSourceLabel, filterData, clearAllFilters } =
+    React.useContext(ModelCatalogContext);
   const filtersApplied = hasFiltersApplied(filterData);
   const isAllModelsView =
     selectedSourceLabel === CategoryName.allModels && !searchTerm && !filtersApplied;
@@ -44,9 +39,7 @@ const ModelCatalog: React.FC = () => {
         title={<TitleWithIcon title="Model Catalog" objectType={ProjectObjectType.modelCatalog} />}
         description="Discover models that are available for your organization to register, deploy, and customize."
         empty={false}
-        loaded={catalogSourcesLoaded}
-        loadError={catalogSourcesLoadError}
-        errorMessage="Unable to load model catalog."
+        loaded
         provideChildrenPadding
       >
         <Sidebar hasBorder hasGutter>

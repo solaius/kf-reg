@@ -10,7 +10,6 @@ type ModelCatalogClientInterface interface {
 	CatalogSourcePreviewInterface
 	CatalogPluginsInterface
 	CatalogManagementInterface
-	McpCatalogInterface
 	CatalogEntitiesInterface
 	CatalogGovernanceInterface
 }
@@ -22,7 +21,6 @@ type ModelCatalogClient struct {
 	CatalogSourcePreview
 	CatalogPlugins
 	CatalogManagement
-	McpCatalog
 	CatalogEntities
 	CatalogGovernance
 }

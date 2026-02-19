@@ -2268,7 +2268,6 @@ func CreateCatalogSourcePreviewMockWithFilter(filterStatus string, pageSize int,
 	}
 }
 
-
 func GetCatalogPluginListMock() models.CatalogPluginList {
 	return models.CatalogPluginList{
 		Plugins: []models.CatalogPlugin{

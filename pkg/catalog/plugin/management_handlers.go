@@ -77,8 +77,9 @@ func managementRouter(p CatalogPlugin, roleExtractor RoleExtractor, srv *Server,
 		// Source-scoped actions.
 		r.Post("/sources/{sourceId}:action", guard(authz.ResourceActions, authz.VerbExecute, actionHandler(p, ActionScopeSource)))
 
-		// Asset-scoped actions.
-		r.Post("/entities/{entityName}:action", guard(authz.ResourceActions, authz.VerbExecute, actionHandler(p, ActionScopeAsset)))
+		// Asset-scoped actions. Use wildcard to support multi-segment entity names
+		// (e.g., model plugin's "group/name" pattern like "acme-ai/model-7b").
+		r.Post("/entities/*", guard(authz.ResourceActions, authz.VerbExecute, actionHandler(p, ActionScopeAsset)))
 
 		// Action discovery endpoints (read-only, available to all roles).
 		r.Get("/actions/source", actionsListHandler(p, ActionScopeSource))
@@ -87,8 +88,9 @@ func managementRouter(p CatalogPlugin, roleExtractor RoleExtractor, srv *Server,
 
 	// Entity getter (requires EntityGetter) — provides GET /entities/{entityName}
 	// for plugins whose native get endpoint has multiple path parameters.
+	// Uses wildcard to support multi-segment entity names.
 	if eg, ok := p.(EntityGetter); ok {
-		r.Get("/entities/{entityName}", entityGetterHandler(eg))
+		r.Get("/entities/*", entityGetterHandler(eg))
 	}
 
 	return r
@@ -622,7 +624,7 @@ func diagnosticsHandler(dp DiagnosticsProvider) http.HandlerFunc {
 // requires multiple path parameters.
 func entityGetterHandler(eg EntityGetter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		entityName := chi.URLParam(r, "entityName")
+		entityName := chi.URLParam(r, "*")
 		if entityName == "" {
 			writeError(w, http.StatusBadRequest, "missing entity name", nil)
 			return

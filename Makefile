@@ -500,14 +500,11 @@ e2e-test: ## Start E2E stack, wait for readiness, run smoke tests, then stop
 		fi; \
 		sleep 2; \
 	done
-	@echo "Running smoke tests..."
-	CATALOG_SERVER_URL=http://localhost:8080 $(GO) test ./tests/e2e/ -v -count=1 -timeout 120s; \
-	TEST_EXIT=$$?; \
-	$(COMPOSE_CMD) -f docker-compose.catalog.yaml down -v; \
-	exit $$TEST_EXIT
+	CATALOG_SERVER_URL=http://localhost:8080 go test ./tests/conformance/... -v -count=1
+	$(COMPOSE_CMD) -f docker-compose.catalog.yaml down -v
 
 .PHONY: e2e-down
-e2e-down: ## Stop the catalog E2E stack and remove volumes
+e2e-down: ## Stop the catalog E2E stack
 	$(COMPOSE_CMD) -f docker-compose.catalog.yaml down -v
 
 ##@ Tools

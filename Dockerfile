@@ -30,17 +30,12 @@ USER root
 
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} make build/compile
 
-# Build catalog-server binary (plugin-based catalog)
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -buildvcs=false -o catalog-server ./cmd/catalog-server
-
 # Use distroless as minimal base image to package the model-registry binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
 FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 WORKDIR /
 # copy the registry binary
 COPY --from=builder /workspace/model-registry .
-# copy the catalog-server binary
-COPY --from=builder /workspace/catalog-server .
 USER 65532:65532
 
 ENTRYPOINT ["/model-registry"]

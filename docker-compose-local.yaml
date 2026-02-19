@@ -41,12 +41,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    entrypoint: ["/catalog-server"]
-    command:
-      - --listen=0.0.0.0:8081
-      - --sources=/testdata/test-catalog-server-sources.yaml
-      - --db-type=postgres
-      - --db-dsn=host=postgres port=5432 user=postgres password=demo dbname=model_catalog sslmode=disable
+    command: ["catalog", "--listen", "0.0.0.0:8081", "--catalogs-path", "/testdata/test-catalog-sources.yaml"]
     container_name: model-catalog
     ports:
       - "8081:8081"
@@ -56,6 +51,11 @@ services:
       - postgres
     profiles:
       - postgres
+    environment:
+      - PGHOST=postgres
+      - PGDATABASE=model_catalog
+      - PGUSER=postgres
+      - PGPASSWORD=demo
 
   model-registry:
     build:
@@ -131,4 +131,4 @@ configs:
   pginit:
     content: |
       CREATE DATABASE model_catalog;
-      GRANT ALL PRIVILEGES ON DATABASE model_catalog TO postgres;
+      GRANT ALL PRIVILEGES ON model_catalog TO postgres;

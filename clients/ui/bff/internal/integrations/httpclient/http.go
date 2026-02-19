@@ -236,36 +236,30 @@ func (c *HTTPClient) DELETE(url string) ([]byte, error) {
 	fullURL := c.baseURL + url
 	req, err := http.NewRequest(http.MethodDelete, fullURL, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error creating DELETE request: %w", err)
 	}
 
 	c.applyHeaders(req)
-
 	logUpstreamReq(c.logger, requestId, req)
 
 	response, err := c.client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error executing DELETE request: %w", err)
 	}
 	defer response.Body.Close()
 
-	body, err := io.ReadAll(response.Body)
-	logUpstreamResp(c.logger, requestId, response, body)
+	responseBody, err := io.ReadAll(response.Body)
+	logUpstreamResp(c.logger, requestId, response, responseBody)
 	if err != nil {
 		return nil, fmt.Errorf("error reading response body: %w", err)
 	}
 
 	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusNoContent {
 		var errorResponse ErrorResponse
-		if err := json.Unmarshal(body, &errorResponse); err != nil {
-			c.logger.Warn("received non-JSON error response",
-				"status_code", response.StatusCode,
-				"content_type", response.Header.Get("Content-Type"),
-				"body_preview", string(body[:min(len(body), 200)]))
-
+		if err := json.Unmarshal(responseBody, &errorResponse); err != nil {
 			errorResponse = ErrorResponse{
 				Code:    strconv.Itoa(response.StatusCode),
-				Message: fmt.Sprintf("HTTP %d: %s", response.StatusCode, string(body)),
+				Message: fmt.Sprintf("HTTP %d: %s", response.StatusCode, string(responseBody)),
 			}
 		}
 		httpError := &HTTPError{
@@ -277,8 +271,7 @@ func (c *HTTPClient) DELETE(url string) ([]byte, error) {
 		}
 		return nil, httpError
 	}
-
-	return body, nil
+	return responseBody, nil
 }
 
 func (c *HTTPClient) applyHeaders(req *http.Request) {

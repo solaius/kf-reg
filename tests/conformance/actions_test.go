@@ -81,7 +81,7 @@ func testActions(t *testing.T, p pluginInfo) {
 				body, _ := json.Marshal(req)
 
 				// Build action URL using the management entities route.
-				actionURL := fmt.Sprintf("%s/entities/%s:action", p.BasePath, entityName)
+				actionURL := fmt.Sprintf("%s/management/entities/%s:action", p.BasePath, entityName)
 
 				httpReq, err := http.NewRequest(http.MethodPost, serverURL+actionURL, bytes.NewReader(body))
 				if err != nil {

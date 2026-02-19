@@ -114,7 +114,7 @@ func runCategoryListGet(t *testing.T, serverURL string, p PluginInfo) CategoryRe
 				listPath := entity.Endpoints.List
 				lastSlash := strings.LastIndex(listPath, "/")
 				basePath := listPath[:lastSlash]
-				getURL = basePath + "/entities/" + name
+				getURL = basePath + "/management/entities/" + name
 			} else {
 				getURL = strings.Replace(entity.Endpoints.Get, "{name}", name, 1)
 			}

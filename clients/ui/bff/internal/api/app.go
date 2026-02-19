@@ -92,12 +92,6 @@ const (
 	CatalogPluginSourceRevisionsPath     = CatalogPluginSourcePath + "/revisions"
 	CatalogPluginSourceRollbackPath      = CatalogPluginSourcePath + "/rollback"
 
-	// MCP catalog browsing routes
-	McpServerName         = "mcp_server_name"
-	McpCatalogPrefix      = ApiPathPrefix + "/mcp_catalog"
-	McpCatalogServersPath = McpCatalogPrefix + "/mcpservers"
-	McpCatalogServerPath  = McpCatalogServersPath + "/:" + McpServerName
-
 	// Generic catalog capabilities and entity routes
 	CatalogEntityPlural     = "entity_plural"
 	CatalogEntityName       = "entity_name"
@@ -196,7 +190,6 @@ func NewApp(cfg config.EnvConfig, logger *slog.Logger) (*App, error) {
 		if err != nil {
 			// Fallback to fake.NewSimpleClientset when envtest binaries are unavailable
 			// (e.g. on Windows where etcd/kube-apiserver aren't installed).
-			// This only works for internal auth since token-based auth requires a real REST config.
 			if cfg.AuthMethod != config.AuthMethodInternal {
 				return nil, fmt.Errorf("failed to setup envtest (required for token auth): %w", err)
 			}
@@ -320,21 +313,17 @@ func (app *App) Routes() http.Handler {
 	apiRouter.GET(CatalogPluginSourceRevisionsPath, app.AttachNamespace(app.AttachModelCatalogRESTClient(app.GetPluginSourceRevisionsHandler)))
 	apiRouter.POST(CatalogPluginSourceRollbackPath, app.AttachNamespace(app.AttachModelCatalogRESTClient(app.RollbackPluginSourceHandler)))
 
-	// MCP catalog browsing routes
-	apiRouter.GET(McpCatalogServersPath, app.AttachNamespace(app.AttachModelCatalogRESTClient(app.GetMcpServersHandler)))
-	apiRouter.GET(McpCatalogServerPath, app.AttachNamespace(app.AttachModelCatalogRESTClient(app.GetMcpServerHandler)))
-
-	// Generic catalog capabilities and entity routes (namespace is optional for global catalog browsing)
+	// Generic catalog capabilities and entity routes
 	apiRouter.GET(CatalogCapabilitiesPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.GetPluginCapabilitiesHandler)))
 	apiRouter.GET(CatalogEntityListPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.GetCatalogEntityListHandler)))
 	apiRouter.GET(CatalogEntityGetPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.GetCatalogEntityHandler)))
 	apiRouter.POST(CatalogEntityActionPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.PostCatalogEntityActionHandler)))
 	apiRouter.POST(CatalogSourceActionPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.PostCatalogSourceActionHandler)))
 
-	// Tenancy routes (namespace is optional; this endpoint lists available namespaces)
+	// Tenancy routes
 	apiRouter.GET(TenancyNamespacesPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.GetTenancyNamespacesHandler)))
 
-	// Governance routes (namespace is optional for global governance operations)
+	// Governance routes
 	apiRouter.GET(GovernanceAssetPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.GetGovernanceHandler)))
 	apiRouter.PATCH(GovernanceAssetPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.PatchGovernanceHandler)))
 	apiRouter.GET(GovernanceHistoryPath, app.AttachOptionalNamespace(app.AttachModelCatalogRESTClient(app.GetGovernanceHistoryHandler)))
