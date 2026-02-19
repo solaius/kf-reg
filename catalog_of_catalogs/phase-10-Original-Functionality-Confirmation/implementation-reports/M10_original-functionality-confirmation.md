@@ -152,10 +152,25 @@ The management entity routes (`/management/entities/{entityName}`) were changed 
 
 ## Testing
 
-- **Conformance tests**: All 323 tests pass (7 skipped), covering all 8 plugins
+- **Conformance tests**: 597 pass, 0 fail, 17 skipped — covering all 8 plugins (see plugin list below)
 - **Go compilation**: `go build ./...` succeeds for all packages
 - **Frontend TypeScript**: `npx tsc --noEmit` passes with zero errors
+- **Frontend production build**: `npm run build` completes successfully (webpack 5.101.3, 2 warnings for asset size limits only)
 - **Docker stack**: Catalog server starts with all 8 plugins healthy
+- **BFF unit tests**: 65 Ginkgo specs exist in `clients/ui/bff/internal/api/` and `internal/repositories/`. These tests require envtest (etcd + kube-apiserver binaries) and **cannot run on Windows** — they are Linux/CI-only. On Windows, the test suite's `BeforeSuite` calls `SetupEnvTest` which fails without the binaries. This is a pre-existing limitation, not introduced by Phase 10.
+
+### Registered Plugins (8 total)
+
+| # | Plugin Name | Version | Description |
+|---|-------------|---------|-------------|
+| 1 | `agents` | v1alpha1 | Agent catalog for AI agents and multi-agent orchestrations |
+| 2 | `guardrails` | v1alpha1 | Guardrail catalog for AI safety and content moderation rules |
+| 3 | `knowledge` | v1alpha1 | Knowledge source catalog for documents, vector stores, and graph stores |
+| 4 | `mcp` | v1alpha1 | McpServer catalog |
+| 5 | `model` | v1alpha1 | Model catalog for ML models |
+| 6 | `policies` | v1alpha1 | Policy catalog for AI governance and access control |
+| 7 | `prompts` | v1alpha1 | Prompt template catalog for reusable AI prompts |
+| 8 | `skills` | v1alpha1 | Skill catalog for tools, operations, and executable actions |
 
 ## Verification
 
@@ -197,6 +212,10 @@ CATALOG_SERVER_URL=http://localhost:8080 go test ./tests/conformance/... -count=
 
 ## Open Items
 
-- Frontend `npm run build` not tested (only TypeScript check); full production build should be verified in CI
-- BFF unit tests not re-run (reverted mock files may need adjustment if tests existed)
 - The `loaderConfigPath` property is no longer needed for the MCP plugin; if users had it in their config, it still works but is no longer required
+
+## Resolved Items (from M11.1 follow-up)
+
+- **Frontend production build**: Verified locally via `npm run build` — compiles successfully with only asset-size warnings (no errors). Previously listed as open; now confirmed.
+- **BFF unit tests**: 65 Ginkgo specs exist across `internal/api/` and `internal/repositories/` test suites. They require Linux envtest binaries (etcd, kube-apiserver) and cannot run on Windows. This is a pre-existing upstream constraint, not introduced by Phase 10. CI on Linux should run these.
+- **Conformance test count updated**: Original report cited 323 tests / 7 skipped from an earlier run. Current count after M11.1 fixes: 597 pass / 0 fail / 17 skipped.
