@@ -373,11 +373,10 @@ func TestApplyHandler_RefreshAfterApply_PersistsStatus(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, rr.Code)
 
-	var result ApplyResult
+	var result SourceInfo
 	err := json.Unmarshal(rr.Body.Bytes(), &result)
 	require.NoError(t, err)
-	assert.Equal(t, "applied", result.Status)
-	require.NotNil(t, result.RefreshResult)
+	assert.Equal(t, "src1", result.ID)
 
 	// Verify the refresh status was persisted.
 	record := srv.getRefreshStatus("default", "test", "src1")

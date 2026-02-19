@@ -256,7 +256,19 @@ func applyHandler(sm SourceManager, srv *Server, configKey string, p CatalogPlug
 			}
 		}
 
-		writeJSON(w, http.StatusOK, result)
+		// Return the updated SourceInfo so callers (e.g. BFF) can unmarshal it.
+		sources, listErr := sm.ListSources(r.Context())
+		if listErr == nil {
+			for _, s := range sources {
+				if s.ID == input.ID {
+					s.Properties = RedactSensitiveProperties(s.Properties)
+					writeJSON(w, http.StatusOK, s)
+					return
+				}
+			}
+		}
+		// Fallback: return a minimal SourceInfo.
+		writeJSON(w, http.StatusOK, SourceInfo{ID: input.ID, Name: input.Name, Type: input.Type})
 	}
 }
 
@@ -295,10 +307,22 @@ func enableHandler(sm SourceManager, srv *Server, configKey string) http.Handler
 			}
 		}
 
-		writeJSON(w, http.StatusOK, map[string]any{
-			"status":  "updated",
-			"enabled": body.Enabled,
-		})
+		// Return the updated SourceInfo so callers (e.g. BFF) can unmarshal it.
+		sources, err := sm.ListSources(r.Context())
+		if err != nil {
+			// Enable succeeded but we can't fetch the updated source; return a minimal response.
+			writeJSON(w, http.StatusOK, SourceInfo{ID: sourceID, Enabled: body.Enabled})
+			return
+		}
+		for _, s := range sources {
+			if s.ID == sourceID {
+				s.Properties = RedactSensitiveProperties(s.Properties)
+				writeJSON(w, http.StatusOK, s)
+				return
+			}
+		}
+		// Source not found in list (shouldn't happen), return minimal info.
+		writeJSON(w, http.StatusOK, SourceInfo{ID: sourceID, Enabled: body.Enabled})
 	}
 }
 

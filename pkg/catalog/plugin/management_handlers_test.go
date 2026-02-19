@@ -193,7 +193,11 @@ func TestDiagnosticsHandler(t *testing.T) {
 }
 
 func TestEnableHandler(t *testing.T) {
-	p := &mgmtTestPlugin{}
+	p := &mgmtTestPlugin{
+		sources: []SourceInfo{
+			{ID: "src1", Name: "Source 1", Type: "yaml", Enabled: true},
+		},
+	}
 
 	r := chi.NewRouter()
 	r.Post("/sources/{sourceId}/enable", enableHandler(p, nil, "test"))
@@ -206,11 +210,11 @@ func TestEnableHandler(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, rr.Code)
 
-	var result map[string]any
+	var result SourceInfo
 	err := json.Unmarshal(rr.Body.Bytes(), &result)
 	require.NoError(t, err)
-	assert.Equal(t, "updated", result["status"])
-	assert.Equal(t, false, result["enabled"])
+	assert.Equal(t, "src1", result.ID)
+	assert.Equal(t, "Source 1", result.Name)
 }
 
 func TestDeleteSourceHandler(t *testing.T) {
@@ -610,10 +614,11 @@ func TestApplyHandler_ValidationRejects(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, rr.Code)
 
-		var result map[string]any
+		var result SourceInfo
 		err := json.Unmarshal(rr.Body.Bytes(), &result)
 		require.NoError(t, err)
-		assert.Equal(t, "applied", result["status"])
+		assert.Equal(t, "test-src", result.ID)
+		assert.Equal(t, "Test Source", result.Name)
 	})
 
 	t.Run("bad JSON returns 400", func(t *testing.T) {
@@ -755,10 +760,10 @@ func TestApplyHandler_ResolvesSecretRefs(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rr.Code, "apply should succeed; body: %s", rr.Body.String())
 
-	var result map[string]any
+	var result SourceInfo
 	err = json.Unmarshal(rr.Body.Bytes(), &result)
 	require.NoError(t, err)
-	assert.Equal(t, "applied", result["status"])
+	assert.Equal(t, "hf-source", result.ID)
 
 	// Verify the plugin received RESOLVED values (plain strings, not SecretRef maps).
 	require.NotNil(t, p.appliedInput, "plugin ApplySource should have been called")

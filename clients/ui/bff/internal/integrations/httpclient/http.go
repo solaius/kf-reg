@@ -144,7 +144,7 @@ func (c *HTTPClient) POSTWithContentType(url string, body io.Reader, contentType
 		return nil, fmt.Errorf("error reading response body: %w", err)
 	}
 
-	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusCreated {
+	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusCreated && response.StatusCode != http.StatusAccepted {
 		var errorResponse ErrorResponse
 		if err := json.Unmarshal(responseBody, &errorResponse); err != nil {
 			// If we can't unmarshal as JSON, create a generic error response with the raw body

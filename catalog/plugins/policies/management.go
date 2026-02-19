@@ -218,12 +218,39 @@ func (p *PolicyPlugin) ApplySource(ctx context.Context, src plugin.SourceConfigI
 
 // EnableSource enables or disables a source.
 func (p *PolicyPlugin) EnableSource(ctx context.Context, id string, enabled bool) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	// Update the in-memory config so ListSources reflects the new state.
+	found := false
+	var srcCfg plugin.SourceConfig
+	for i, src := range p.cfg.Section.Sources {
+		if src.ID == id {
+			p.cfg.Section.Sources[i].Enabled = &enabled
+			srcCfg = p.cfg.Section.Sources[i]
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("source %q not found", id)
+	}
 
 	if !enabled {
+		p.mu.Lock()
 		delete(p.sources, id)
+		p.mu.Unlock()
+		return nil
 	}
+
+	// Re-enable: reload entities from the source.
+	entries, err := loadYAMLSource(srcCfg)
+	if err != nil {
+		return fmt.Errorf("failed to reload source %q: %w", id, err)
+	}
+	for i := range entries {
+		entries[i].SourceId = id
+	}
+	p.mu.Lock()
+	p.sources[id] = entries
+	p.mu.Unlock()
 	return nil
 }
 

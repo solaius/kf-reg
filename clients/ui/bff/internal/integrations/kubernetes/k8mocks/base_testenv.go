@@ -75,8 +75,7 @@ func SetupEnvTest(input TestEnvInput) (*envtest.Environment, kubernetes.Interfac
 	cfg, err := testEnv.Start()
 	if err != nil {
 		input.Logger.Error("failed to start envtest", slog.String("error", err.Error()))
-		input.Cancel()
-		os.Exit(1)
+		return nil, nil, fmt.Errorf("unable to start control plane: %w", err)
 	}
 
 	clientset, err := kubernetes.NewForConfig(cfg)
